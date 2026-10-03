@@ -68,6 +68,7 @@ const KEYWORDS = {
   'اتصل': 'DIAL', 'dial': 'DIAL',
   'انسخ': 'CLIP_COPY', 'clipcopy': 'CLIP_COPY',
   'أرسل_تنبيه': 'SEND_NOTIFICATION', 'notify': 'SEND_NOTIFICATION',
+  'جلب': 'HTTP_GET', 'fetch': 'HTTP_GET',
 };
 
 function isKeyword(text) {

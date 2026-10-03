@@ -478,11 +478,32 @@ function android_من_نارمين(ملف_narmin, اسم_مشروع, خيارا�
 
   // ابحث عن كل الشاشات
   const screens = [];
+  const imports = [];
+  const deps = [];
+  const permissions = [];
   for (const stmt of ast.body) {
     if (stmt.type === NodeType.SCREEN) screens.push(stmt);
   }
   if (screens.length === 0) {
     throw new Error('لا توجد "شاشة" في ملف نارمين');
+  }
+
+  // فحص استخدام HTTP → إضافة INTERNET
+  const hasHttp = (function scan(items) {
+    for (const it of items) {
+      if (!it || typeof it !== 'object') continue;
+      if (it.type === 'HttpGet') return true;
+      if (it.type === 'CallExpr' && it.callee && it.callee.name === 'جلب') return true;
+      for (const k of Object.keys(it)) {
+        const v = it[k];
+        if (Array.isArray(v) && scan(v)) return true;
+        if (v && typeof v === 'object' && v.type && scan([v])) return true;
+      }
+    }
+    return false;
+  })(screens.flatMap(sc => sc.children));
+  if (hasHttp && !permissions.includes('android.permission.INTERNET')) {
+    permissions.push('android.permission.INTERNET');
   }
 
   // 2) اسم المشروع
@@ -526,6 +547,7 @@ function android_من_نارمين(ملف_narmin, اسم_مشروع, خيارا�
   if (hasNotification && !permissions.includes('android.permission.POST_NOTIFICATIONS')) {
     permissions.push('android.permission.POST_NOTIFICATIONS');
   }
+
 
   const { generateMultiProject } = require('../codegen/android');
   const gen = generateMultiProject(screens, اسم_مشروع, مسار, { imports: [], deps: [], permissions: [] });

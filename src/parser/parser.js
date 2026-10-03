@@ -571,6 +571,10 @@ class Parser {
       if (tok.canonical === 'TRUE') { this.advance(); return AST.Boolean(true); }
       if (tok.canonical === 'FALSE') { this.advance(); return AST.Boolean(false); }
       if (tok.canonical === 'NULL') { this.advance(); return AST.Null(); }
+      if (tok.canonical === 'HTTP_GET') {
+        this.advance();
+        return AST.Identifier('جلب');
+      }
       // العنصر → معرّف خاص داخل القوائم
       if (tok.canonical === 'ITEM') { this.advance(); return AST.Identifier('العنصر'); }
       // احذف_من → استدعاء دالة عادي

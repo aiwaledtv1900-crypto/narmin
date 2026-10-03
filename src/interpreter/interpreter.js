@@ -452,6 +452,12 @@ class Interpreter {
   }
 
   evalCall(node, env) {
+    // جلب(url) — تنفيذ HTTP GET متزامن
+    if (node.callee.type === N.IDENTIFIER && node.callee.name === 'جلب') {
+      const url = this.eval(node.args[0], env);
+      return this.httpGetSync(String(url));
+    }
+
     const callee = this.eval(node.callee, env);
     const args = node.args.map((a) => this.eval(a, env));
 
@@ -610,6 +616,18 @@ class Interpreter {
     // أي جملة أخرى → نفّذها كـ statement ولا قيمة
     this.exec(stmt, env);
     return null;
+  }
+
+  httpGetSync(url) {
+    try {
+      const { execFileSync } = require('child_process');
+      const out = execFileSync('curl', ['-s', '-L', '--max-time', '30', url], {
+        encoding: 'utf8', maxBuffer: 10 * 1024 * 1024,
+      });
+      return { نجح: true, جسم: out, كود: 200, خطأ: '' };
+    } catch (e) {
+      return { نجح: false, جسم: '', كود: e.status || 0, خطأ: e.message || 'فشل الطلب' };
+    }
   }
 
   evalObject(node, env) {

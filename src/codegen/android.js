@@ -117,7 +117,7 @@ function hasStateRef(node, stateVars) {
 }
 
 // ═══ تعبير → Kotlin (مع وعي بالحالة) ═══
-function exprToKotlin(node, stateVars) {
+function exprToKotlin(node, stateVars, localVars = null) {
   if (!node) return '""';
   switch (node.type) {
     case N.STRING: return '"' + escapeKotlin(node.value) + '"';
@@ -137,9 +137,34 @@ function exprToKotlin(node, stateVars) {
       if (obj.type === N.IDENTIFIER && obj.name === 'build') {
         return BUILD_MAP[node.property] || `Build.${node.property}`;
       }
-      return `${exprToKotlin(obj, stateVars)}.${node.property}`;
+      if (obj.type === N.CALL && obj.callee.type === N.IDENTIFIER && obj.callee.name === 'جلب') {
+        return `(${exprToKotlin(obj, stateVars, localVars)})["${node.property}"] as? Boolean ?: (${exprToKotlin(obj, stateVars, localVars)})["${node.property}"]`;
+      }
+      if (obj.type === N.IDENTIFIER && localVars && localVars.get(obj.name) === 'http') {
+        return `((${obj.name}) as MutableMap<String, Any>)["${node.property}"]`;
+      }
+      if (obj.type === N.IDENTIFIER && stateVars && stateVars.has(obj.name)) {
+        return `STATE_${obj.name}.${node.property}`;
+      }
+      if (obj.type === N.IDENTIFIER) {
+        return `((${obj.name}) as MutableMap<String, Any>)["${node.property}"]`;
+      }
+      return `${exprToKotlin(obj, stateVars, localVars)}.${node.property}`;
+    }
+    case N.INDEX: {
+      const obj = node.object;
+      const idx = node.index;
+      // رد["نجح"] → (رد as MutableMap<String, Any>)["نجح"]
+      if (obj.type === N.IDENTIFIER && idx.type === N.STRING) {
+        return `((${obj.name}) as MutableMap<String, Any>)["${idx.value}"]`;
+      }
+      return `${exprToKotlin(obj, stateVars, localVars)}[${exprToKotlin(idx, stateVars, localVars)}]`;
     }
     case N.CALL: {
+      if (node.callee.type === N.IDENTIFIER && node.callee.name === 'جلب') {
+        const url = exprToKotlin(node.args[0], stateVars);
+        return `httpGet((${url}).toString())`;
+      }
       if (node.callee.type === N.IDENTIFIER && node.callee.name === 'نص') {
         return `(${exprToKotlin(node.args[0], stateVars)}).toString()`;
       }
@@ -204,18 +229,20 @@ function staticString(node) {
 }
 
 // ═══ معالج الحدث ═══
-function handlerToKotlin(block, indent, stateVars) {
+function handlerToKotlin(block, indent, stateVars, parentLocalVars = null) {
   const lines = [];
+  // متتبّع المتغيرات المحلية: اسم → نوع
+  const LOCAL_VARS = parentLocalVars || new Map();
   for (const stmt of block.body) {
     if (stmt.type === N.KOTLIN_RAW) {
       lines.push(`${indent}${stmt.code}`);
     } else if (stmt.type === N.PRINT) {
-      lines.push(`${indent}android.util.Log.d("narmin", ${exprToKotlin(stmt.arg, stateVars)})`);
+      lines.push(`${indent}android.util.Log.d("narmin", ${exprToKotlin(stmt.arg, stateVars, LOCAL_VARS)})`);
     } else if (stmt.type === N.ASSIGN) {
       if (stmt.target.type === N.IDENTIFIER && stateVars.has(stmt.target.name)) {
         const info = stateVars.get(stmt.target.name);
         const t = info.type;
-        let value = exprToKotlin(stmt.value, stateVars);
+        let value = exprToKotlin(stmt.value, stateVars, LOCAL_VARS);
         if (t === 'Double') value = `(${value}).toDouble()`;
         else if (t === 'String') value = `(${value}).toString()`;
         else if (t === 'Boolean') value = `(${value}) as Boolean`;
@@ -224,17 +251,36 @@ function handlerToKotlin(block, indent, stateVars) {
           lines.push(`${indent}savePref("${stmt.target.name}", STATE_${stmt.target.name})`);
         }
       } else {
-        lines.push(`${indent}${exprToKotlin(stmt.target, stateVars)} = ${exprToKotlin(stmt.value, stateVars)}`);
+        lines.push(`${indent}${exprToKotlin(stmt.target, stateVars, LOCAL_VARS)} = ${exprToKotlin(stmt.value, stateVars, LOCAL_VARS)}`);
+      }
+    } else if (stmt.type === N.LET || stmt.type === N.CONST) {
+      // متغير محلي داخل المعالج
+      const keyword = stmt.type === N.CONST ? 'val' : 'var';
+      if (stmt.init) {
+        // إذا كان httpGet → احفظ النوع
+        if (stmt.init.type === N.CALL && stmt.init.callee.type === N.IDENTIFIER && stmt.init.callee.name === 'جلب') {
+          LOCAL_VARS.set(stmt.name, 'http');
+          lines.push(`${indent}${keyword} ${stmt.name} = httpGet((${exprToKotlin(stmt.init.args[0], stateVars, LOCAL_VARS)}).toString())`);
+        } else {
+          const value = exprToKotlin(stmt.init, stateVars, LOCAL_VARS);
+          lines.push(`${indent}${keyword} ${stmt.name} = ${value}`);
+        }
+      } else {
+        lines.push(`${indent}${keyword} ${stmt.name}: Any? = null`);
       }
     } else if (stmt.type === N.EXPR_STMT) {
-      lines.push(`${indent}${exprToKotlin(stmt.expr, stateVars)}`);
+      lines.push(`${indent}${exprToKotlin(stmt.expr, stateVars, LOCAL_VARS)}`);
     } else if (stmt.type === N.IF) {
-      const test = exprToKotlin(stmt.test, stateVars);
+      let test = exprToKotlin(stmt.test, stateVars, LOCAL_VARS);
+      // إذا كان الاختبار MEMBER (وصول لخريطة) → قارنه بـ true
+      if (stmt.test.type === N.MEMBER || test.includes('["')) {
+        test = `(${test} == true)`;
+      }
       lines.push(`${indent}if (${test}) {`);
-      lines.push(handlerToKotlin(stmt.consequent, indent + '    ', stateVars));
+      lines.push(handlerToKotlin(stmt.consequent, indent + '    ', stateVars, LOCAL_VARS));
       if (stmt.alternate) {
         lines.push(`${indent}} else {`);
-        lines.push(handlerToKotlin(stmt.alternate, indent + '    ', stateVars));
+        lines.push(handlerToKotlin(stmt.alternate, indent + '    ', stateVars, LOCAL_VARS));
       }
       lines.push(`${indent}}`);
     } else if (stmt.type === N.NAVIGATE) {
@@ -243,11 +289,11 @@ function handlerToKotlin(block, indent, stateVars) {
       const cls = info ? info.cls : (target.replace(/[^a-zA-Z0-9]/g, '') || 'Screen') + 'Activity';
       lines.push(`${indent}startActivity(android.content.Intent(this, ${cls}::class.java))`);
     } else if (stmt.type === N.TOAST) {
-      lines.push(`${indent}android.widget.Toast.makeText(this, ${exprToKotlin(stmt.text, stateVars)}.toString(), android.widget.Toast.LENGTH_SHORT).show()`);
+      lines.push(`${indent}android.widget.Toast.makeText(this, ${exprToKotlin(stmt.text, stateVars, LOCAL_VARS)}.toString(), android.widget.Toast.LENGTH_SHORT).show()`);
     } else if (stmt.type === N.ALERT) {
       lines.push(`${indent}androidx.appcompat.app.AlertDialog.Builder(this)`);
-      lines.push(`${indent}    .setTitle(${exprToKotlin(stmt.title, stateVars)}.toString())`);
-      lines.push(`${indent}    .setMessage(${exprToKotlin(stmt.message, stateVars)}.toString())`);
+      lines.push(`${indent}    .setTitle(${exprToKotlin(stmt.title, stateVars, LOCAL_VARS)}.toString())`);
+      lines.push(`${indent}    .setMessage(${exprToKotlin(stmt.message, stateVars, LOCAL_VARS)}.toString())`);
       lines.push(`${indent}    .setPositiveButton("حسناً") { _, _ ->`);
       if (stmt.handler) {
         lines.push(handlerToKotlin(stmt.handler, indent + '        ', stateVars));
@@ -258,13 +304,13 @@ function handlerToKotlin(block, indent, stateVars) {
     } else if (stmt.type === N.BACK) {
       lines.push(`${indent}finish()`);
     } else if (stmt.type === N.SNACKBAR) {
-      const text = exprToKotlin(stmt.text, stateVars);
+      const text = exprToKotlin(stmt.text, stateVars, LOCAL_VARS);
       lines.push(`${indent}com.google.android.material.snackbar.Snackbar.make(findViewById(android.R.id.content), ${text}.toString(), com.google.android.material.snackbar.Snackbar.LENGTH_SHORT).show()`);
     } else if (stmt.type === N.OPEN_URL) {
-      const url = exprToKotlin(stmt.url, stateVars);
+      const url = exprToKotlin(stmt.url, stateVars, LOCAL_VARS);
       lines.push(`${indent}startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(${url}.toString())))`);
     } else if (stmt.type === N.SHARE_TEXT) {
-      const text = exprToKotlin(stmt.text, stateVars);
+      const text = exprToKotlin(stmt.text, stateVars, LOCAL_VARS);
       lines.push(`${indent}run {`);
       lines.push(`${indent}    val sendIntent = android.content.Intent().apply {`);
       lines.push(`${indent}        action = android.content.Intent.ACTION_SEND`);
@@ -274,18 +320,18 @@ function handlerToKotlin(block, indent, stateVars) {
       lines.push(`${indent}    startActivity(android.content.Intent.createChooser(sendIntent, "شارك عبر"))`);
       lines.push(`${indent}}`);
     } else if (stmt.type === N.DIAL) {
-      const phone = exprToKotlin(stmt.phone, stateVars);
+      const phone = exprToKotlin(stmt.phone, stateVars, LOCAL_VARS);
       lines.push(`${indent}startActivity(android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:" + ${phone}.toString())))`);
     } else if (stmt.type === N.CLIP_COPY) {
-      const text = exprToKotlin(stmt.text, stateVars);
+      const text = exprToKotlin(stmt.text, stateVars, LOCAL_VARS);
       lines.push(`${indent}run {`);
       lines.push(`${indent}    val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager`);
       lines.push(`${indent}    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("narmin", ${text}.toString()))`);
       lines.push(`${indent}    android.widget.Toast.makeText(this, "تم النسخ", android.widget.Toast.LENGTH_SHORT).show()`);
       lines.push(`${indent}}`);
     } else if (stmt.type === N.SEND_NOTIFICATION) {
-      const title = exprToKotlin(stmt.title, stateVars);
-      const body = exprToKotlin(stmt.body, stateVars);
+      const title = exprToKotlin(stmt.title, stateVars, LOCAL_VARS);
+      const body = exprToKotlin(stmt.body, stateVars, LOCAL_VARS);
       lines.push(`${indent}run {`);
       lines.push(`${indent}    val nm = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager`);
       lines.push(`${indent}    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {`);
@@ -781,6 +827,32 @@ import androidx.appcompat.app.AppCompatActivity${importsSection}
 
 class ${فئة} : AppCompatActivity() {
 ${stateBlock}
+    private fun httpGet(url: String): MutableMap<String, Any> {
+        android.util.Log.d("narmin-http", "start: " + url)
+        var result: MutableMap<String, Any> = mutableMapOf("نجح" to false, "جسم" to "", "كود" to 0, "خطأ" to "initial")
+        val thread = Thread {
+            try {
+                val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.connectTimeout = 15000
+                conn.readTimeout = 15000
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Narmin)")
+                val code = conn.responseCode
+                android.util.Log.d("narmin-http", "code: " + code.toString())
+                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                val body = stream?.bufferedReader()?.use { it.readText() } ?: ""
+                result = mutableMapOf("نجح" to (code in 200..299), "جسم" to body, "كود" to code, "خطأ" to (if (code in 200..299) "" else "HTTP " + code.toString()))
+            } catch (e: Exception) {
+                android.util.Log.e("narmin-http", "ERR: " + e.javaClass.simpleName + ": " + (e.message ?: ""))
+                result = mutableMapOf("نجح" to false, "جسم" to "", "كود" to 0, "خطأ" to (e.javaClass.simpleName + ": " + (e.message ?: "")))
+            }
+        }
+        thread.start()
+        thread.join(20000)
+        android.util.Log.d("narmin-http", "done")
+        return result
+    }
+
     private fun formatNumber(n: Double): String {
         return if (n == n.toLong().toDouble()) n.toLong().toString()
                else String.format("%.6f", n).trimEnd('0').trimEnd('.')
@@ -985,6 +1057,32 @@ import androidx.appcompat.app.AppCompatActivity${importsSection}
 
 class ${info.cls} : AppCompatActivity() {
 ${stateBlock}
+    private fun httpGet(url: String): MutableMap<String, Any> {
+        android.util.Log.d("narmin-http", "start: " + url)
+        var result: MutableMap<String, Any> = mutableMapOf("نجح" to false, "جسم" to "", "كود" to 0, "خطأ" to "initial")
+        val thread = Thread {
+            try {
+                val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.connectTimeout = 15000
+                conn.readTimeout = 15000
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Narmin)")
+                val code = conn.responseCode
+                android.util.Log.d("narmin-http", "code: " + code.toString())
+                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                val body = stream?.bufferedReader()?.use { it.readText() } ?: ""
+                result = mutableMapOf("نجح" to (code in 200..299), "جسم" to body, "كود" to code, "خطأ" to (if (code in 200..299) "" else "HTTP " + code.toString()))
+            } catch (e: Exception) {
+                android.util.Log.e("narmin-http", "ERR: " + e.javaClass.simpleName + ": " + (e.message ?: ""))
+                result = mutableMapOf("نجح" to false, "جسم" to "", "كود" to 0, "خطأ" to (e.javaClass.simpleName + ": " + (e.message ?: "")))
+            }
+        }
+        thread.start()
+        thread.join(20000)
+        android.util.Log.d("narmin-http", "done")
+        return result
+    }
+
     private fun formatNumber(n: Double): String {
         return if (n == n.toLong().toDouble()) n.toLong().toString()
                else String.format("%.6f", n).trimEnd('0').trimEnd('.')
