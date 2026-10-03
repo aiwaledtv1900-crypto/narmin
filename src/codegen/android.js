@@ -15,6 +15,10 @@ const BUILD_MAP = {
 function escapeKotlin(s) {
   return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
 }
+let THEME = { primary: '#1A237E', accent: '#FFC107', background: '#F5F7FA', heading: '#1A237E', onPrimary: '#FFFFFF' };
+let BUTTON_COLOR = null;
+let TEXT_COLOR = null;
+
 function escapeXml(s) {
   return String(s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -373,7 +377,7 @@ function buildXml(children, indent = '        ') {
       lines.push(`${indent}    android:layout_width="wrap_content"`);
       lines.push(`${indent}    android:layout_height="wrap_content"`);
       lines.push(`${indent}    android:text="${escapeXml(staticString(child.text))}"`);
-      lines.push(`${indent}    android:textColor="#1A237E"`);
+      lines.push(`${indent}    android:textColor="${TEXT_COLOR || THEME.heading}"`);
       lines.push(`${indent}    android:textSize="32sp"`);
       lines.push(`${indent}    android:textStyle="bold"`);
       lines.push(`${indent}    android:layout_marginTop="8dp"`);
@@ -386,7 +390,7 @@ function buildXml(children, indent = '        ') {
       lines.push(`${indent}    android:layout_width="match_parent"`);
       lines.push(`${indent}    android:layout_height="wrap_content"`);
       lines.push(`${indent}    android:text="${escapeXml(staticString(child.expr))}"`);
-      lines.push(`${indent}    android:textColor="#212121"`);
+      lines.push(`${indent}    android:textColor="${TEXT_COLOR || THEME.onSurface || '#212121'}"`);
       lines.push(`${indent}    android:textSize="16sp"`);
       lines.push(`${indent}    android:layout_marginTop="8dp"`);
       lines.push(`${indent}    android:layout_marginBottom="8dp" />`);
@@ -400,7 +404,7 @@ function buildXml(children, indent = '        ') {
       lines.push(`${indent}    android:text="${escapeXml(staticString(child.text))}"`);
       lines.push(`${indent}    android:textSize="16sp"`);
       lines.push(`${indent}    android:layout_marginTop="16dp"`);
-      lines.push(`${indent}    app:backgroundTint="#1A237E"`);
+      lines.push(`${indent}    app:backgroundTint="${BUTTON_COLOR || THEME.primary}"`);
       lines.push(`${indent}    app:cornerRadius="8dp" />`);
       child._id = id;
     } else if (child.type === N.UI_CARD) {
@@ -423,7 +427,7 @@ function buildXml(children, indent = '        ') {
         lines.push(`${indent}            android:layout_width="wrap_content"`);
         lines.push(`${indent}            android:layout_height="wrap_content"`);
         lines.push(`${indent}            android:text="${escapeXml(title)}"`);
-        lines.push(`${indent}            android:textColor="#1A237E"`);
+        lines.push(`${indent}            android:textColor="${TEXT_COLOR || THEME.heading}"`);
         lines.push(`${indent}            android:textSize="18sp"`);
         lines.push(`${indent}            android:textStyle="bold" />`);
         lines.push('');
@@ -447,7 +451,7 @@ function buildXml(children, indent = '        ') {
       lines.push(`${indent}    android:layout_height="wrap_content"`);
       lines.push(`${indent}    android:hint="${escapeXml(staticString(child.hint))}"`);
       lines.push(`${indent}    android:layout_marginTop="12dp"`);
-      lines.push(`${indent}    app:boxStrokeColor="#1A237E"`);
+      lines.push(`${indent}    app:boxStrokeColor="${THEME.primary}"`);
       lines.push(`${indent}    app:boxStrokeWidth="2dp">`);
       lines.push('');
       lines.push(`${indent}    <com.google.android.material.textfield.TextInputEditText`);
@@ -480,9 +484,9 @@ function buildXml(children, indent = '        ') {
       lines.push(`${indent}    android:layout_height="wrap_content"`);
       lines.push(`${indent}    android:text="${escapeXml(staticString(child.text))}"`);
       lines.push(`${indent}    android:textSize="16sp"`);
-      lines.push(`${indent}    android:textColor="#212121"`);
+      lines.push(`${indent}    android:textColor="${TEXT_COLOR || THEME.onSurface || '#212121'}"`);
       lines.push(`${indent}    android:layout_marginTop="8dp"`);
-      lines.push(`${indent}    android:buttonTint="#1A237E" />`);
+      lines.push(`${indent}    android:buttonTint="${THEME.primary}" />`);
       child._id = id;
     } else if (child.type === N.UI_SWITCH) {
       const id = nextId();
@@ -492,7 +496,7 @@ function buildXml(children, indent = '        ') {
       lines.push(`${indent}    android:layout_height="wrap_content"`);
       lines.push(`${indent}    android:text="${escapeXml(staticString(child.text))}"`);
       lines.push(`${indent}    android:textSize="16sp"`);
-      lines.push(`${indent}    android:textColor="#212121"`);
+      lines.push(`${indent}    android:textColor="${TEXT_COLOR || THEME.onSurface || '#212121'}"`);
       lines.push(`${indent}    android:layout_marginTop="8dp" />`);
       child._id = id;
     } else if (child.type === N.UI_PROGRESS) {
@@ -504,7 +508,7 @@ function buildXml(children, indent = '        ') {
       lines.push(`${indent}    android:layout_height="wrap_content"`);
       lines.push(`${indent}    android:max="100"`);
       lines.push(`${indent}    android:progress="${escapeXml(staticString(child.value) || '0')}"`);
-      lines.push(`${indent}    android:progressTint="#1A237E"`);
+      lines.push(`${indent}    android:progressTint="${THEME.primary}"`);
       lines.push(`${indent}    android:layout_marginTop="16dp"`);
       lines.push(`${indent}    android:layout_marginBottom="16dp" />`);
       child._id = id;
@@ -546,8 +550,8 @@ function buildXml(children, indent = '        ') {
       lines.push(`${indent}    android:layout_height="wrap_content"`);
       lines.push(`${indent}    android:layout_marginTop="8dp"`);
       lines.push(`${indent}    android:layout_marginBottom="8dp"`);
-      lines.push(`${indent}    app:tabIndicatorColor="#1A237E"`);
-      lines.push(`${indent}    app:tabSelectedTextColor="#1A237E"`);
+      lines.push(`${indent}    app:tabIndicatorColor="${THEME.primary}"`);
+      lines.push(`${indent}    app:tabSelectedTextColor="${THEME.primary}"`);
       lines.push(`${indent}    app:tabTextColor="#757575" />`);
       child._id = id;
     }
@@ -774,6 +778,9 @@ function toClassName(name) {
 
 function generateProject(screenNode, projectName, targetDir, extra = {}) {
   idCounter = 0;
+  THEME = extra.palette || THEME;
+  BUTTON_COLOR = extra.buttonColor || null;
+  TEXT_COLOR = extra.textColor || null;
   // خريطة افتراضية لشاشة واحدة
   CURRENT_SCREEN_MAP = new Map();
   CURRENT_SCREEN_MAP.set(screenNode.name, { cls: toClassName(projectName), index: 0 });
@@ -790,7 +797,7 @@ function generateProject(screenNode, projectName, targetDir, extra = {}) {
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#F5F7FA"
+    android:background="${THEME.background}"
     android:layoutDirection="rtl">
 
     <LinearLayout
@@ -979,6 +986,11 @@ function generateMultiProject(screens, projectName, targetDir, extra = {}) {
   ];
   for (const d of dirs) fs.mkdirSync(path.join(targetDir, d), { recursive: true });
 
+  // اضبط الألوان
+  THEME = extra.palette || THEME;
+  BUTTON_COLOR = extra.buttonColor || null;
+  TEXT_COLOR = extra.textColor || null;
+
   // ولّد كل شاشة
   for (const screen of screens) {
     const info = screenMap.get(screen.name);
@@ -993,7 +1005,7 @@ function generateMultiProject(screens, projectName, targetDir, extra = {}) {
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#F5F7FA"
+    android:background="${THEME.background}"
     android:layoutDirection="rtl">
 
     <LinearLayout

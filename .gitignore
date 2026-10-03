@@ -39,3 +39,11 @@ Thumbs.db
 *_smali/
 *_extracted/
 dist/
+
+# ملفات مؤقتة
+patch*.py
+fix_*.py
+inspect.py
+
+# ملفات مؤقتة
+p*.py

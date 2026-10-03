@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { makeNative } = require('../interpreter/values');
+const { resolvePalette, resolveButtonColor, resolveColorSmart } = require('../natural/palettes');
 
 const HOME = os.homedir();
 const PREFIX = process.env.PREFIX || '/data/data/com.termux/files/usr';
@@ -474,6 +475,20 @@ function android_من_نارمين(ملف_narmin, اسم_مشروع, خيارا�
   const { parse } = require('../parser/parser');
   const { NodeType } = require('../ast/nodes');
   const source = fs.readFileSync(ملف_narmin, 'utf8');
+
+  // استخراج النمط من التوجيهات (#@النمط: ذهبية)
+  let palette = null;
+  let buttonColor = null;
+  const themeMatch = source.match(/#@\s*النمط\s*[:\s]+([^\n]+)/);
+  if (themeMatch) palette = resolvePalette(themeMatch[1].trim());
+  const btnMatch = source.match(/#@\s*الزر\s*[:\s]+([^\n]+)/);
+  if (btnMatch) buttonColor = resolveButtonColor(btnMatch[1].trim());
+  const txtMatch = source.match(/#@\s*النص\s*[:\s]+([^\n]+)/);
+  let textColor = null;
+  if (txtMatch) {
+    const { resolveColorSmart } = require('../natural/palettes');
+    textColor = resolveColorSmart(txtMatch[1].trim());
+  }
   const ast = parse(source);
 
   // ابحث عن كل الشاشات
@@ -550,7 +565,7 @@ function android_من_نارمين(ملف_narmin, اسم_مشروع, خيارا�
 
 
   const { generateMultiProject } = require('../codegen/android');
-  const gen = generateMultiProject(screens, اسم_مشروع, مسار, { imports: [], deps: [], permissions: [] });
+  const gen = generateMultiProject(screens, اسم_مشروع, مسار, { imports: [], deps: [], permissions: [], palette, buttonColor, textColor });
 
   // أيقونة التطبيق — نضمن وجودها بعد كل التوليد
   const mipDir = path.join(مسار, 'app/src/main/res/mipmap');

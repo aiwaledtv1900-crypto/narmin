@@ -45,6 +45,20 @@ if (cmd && cmd.endsWith('.narm')) {
   process.exit(0);
 }
 
+// الوضع الطبيعي — عربية عادية → تطبيق كامل
+const NATURAL_CMDS = ['ابدأ', 'ابداء', 'ابدا', 'إبدأ', 'طبيعي', 'بسيط', 'natural', 'ask', 'start'];
+if (NATURAL_CMDS.includes(cmd)) {
+  const { startNaturalRepl } = require('./natural/repl');
+  startNaturalRepl();
+  return;
+}
+
+if (cmd === 'نفّذ' && args[1]) {
+  const { runBatch } = require('./natural/repl');
+  runBatch(args[1]);
+  return;
+}
+
 if (!cmd || cmd === 'repl') {
   const { startRepl } = require('./repl');
   startRepl();
