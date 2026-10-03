@@ -199,8 +199,17 @@ class Interpreter {
   execScreen(node, env) {
     // عند التنفيذ المباشر: اطبع ملخص الشاشة
     this.output(`[شاشة: ${node.name}]`);
+    // 1) عرّف كل الحالات أولاً (STATE_DECL) لتصبح معروفة قبل العنوان وغيره
     for (const child of node.children) {
-      this.execScreenElement(child, env, 1);
+      if (child.type === N.STATE_DECL) {
+        this.execScreenElement(child, env, 1);
+      }
+    }
+    // 2) الآن اعرض باقي العناصر
+    for (const child of node.children) {
+      if (child.type !== N.STATE_DECL) {
+        this.execScreenElement(child, env, 1);
+      }
     }
   }
 

@@ -23,6 +23,51 @@ function escapeXml(s) {
 
 // ═══ جمع الحالة ═══
 function collectState(children, state = new Map()) {
+  // جمع كل الـ bindings المُعرَّفة
+  function collectBindings(items) {
+    const bindings = [];
+    for (const c of items) {
+      if (c.type === N.UI_TEXTFIELD && c.binding) bindings.push(c.binding);
+      if (c.children) bindings.push(...collectBindings(c.children));
+      if (c.template) bindings.push(...collectBindings(c.template));
+      if (c.handler) bindings.push(...collectBindings(c.handler.body || []));
+    }
+    return bindings;
+  }
+  const bindingNames = new Set(collectBindings(children));
+
+  // هل هذا المتغير يُستخدم في عملية حسابية؟
+  function usedArithmetically(items, name) {
+    if (!items) return false;
+    if (!Array.isArray(items)) items = [items];
+    for (const c of items) {
+      if (!c || typeof c !== 'object') continue;
+      // هل هي عملية حسابية تستخدم الاسم؟
+      if (c.type === N.BINARY && ['+', '-', '*', '/', '%'].includes(c.op)) {
+        const leftIsName = c.left && c.left.type === N.IDENTIFIER && c.left.name === name;
+        const rightIsName = c.right && c.right.type === N.IDENTIFIER && c.right.name === name;
+        if (leftIsName || rightIsName) {
+          const other = leftIsName ? c.right : c.left;
+          if (other && other.type === N.NUMBER) return true;
+          if (other && other.type === N.IDENTIFIER && state.has(other.name)) {
+            const ot = state.get(other.name).type;
+            if (ot === 'Double') return true;
+          }
+        }
+      }
+      // walk كل الحقول
+      for (const key of Object.keys(c)) {
+        const v = c[key];
+        if (Array.isArray(v)) {
+          if (usedArithmetically(v, name)) return true;
+        } else if (v && typeof v === 'object' && v.type) {
+          if (usedArithmetically([v], name)) return true;
+        }
+      }
+    }
+    return false;
+  }
+
   for (const child of children) {
     if (child.type === N.STATE_DECL) {
       let type = 'String', init = '""', isList = false;
@@ -48,7 +93,13 @@ function collectState(children, state = new Map()) {
     }
     if (child.type === N.UI_TEXTFIELD && child.binding) {
       if (!state.has(child.binding)) {
-        state.set(child.binding, { type: 'String', init: '""', persistent: false });
+        // كشف النوع من السياق
+        const isNum = usedArithmetically(children, child.binding);
+        if (isNum) {
+          state.set(child.binding, { type: 'Double', init: '0.0', persistent: false });
+        } else {
+          state.set(child.binding, { type: 'String', init: '""', persistent: false });
+        }
       }
     }
     if (child.children) collectState(child.children, state);
