@@ -69,23 +69,31 @@ class NaturalSession {
 
   // ═══ 3) تقسيم سطر بأوامر متعددة ═══
   splitCommands(text) {
-    const keywords = ['انشئ', 'انشي', 'أضف', 'اضف', 'اريد', 'أريد', 'اعرض', 'شغّل', 'شغل', 'ابن', 'ابنِ', 'تراجع', 'خروج', 'قائمة', 'ارني', 'أرني', 'واجهة', 'واجهه', 'لون', 'ألوان', 'الوان', 'نمط', 'ازرار', 'أزرار', 'الازرار', 'نص'];
-    // احذف الاقتباسات حول الأوامر أولاً
-    let clean = text.replace(
-      /[""«»']((?:أضف|انشئ|شغّل|شغل|ابن[يِ]?|اعرض|اريد|أريد|تراجع|خروج)[^""«»']*)[""«»']/g,
-      '$1'
-    );
-    const pattern = new RegExp(
-      '(?<!^)(?=' + keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')',
-      'g'
-    );
-    const parts = clean.split(pattern).map(p => p.trim()).filter(Boolean);
-    return parts.length > 1 ? parts : [clean];
+    const keywords = ['انشئ', 'انشي', 'انش', 'أضف', 'اضف',
+      'اريد', 'أريد', 'اعرض', 'شغّل', 'شغل',
+      'ابن', 'ابنِ', 'تراجع', 'خروج',
+      'ارني', 'أرني',
+      'واجهة', 'واجهه', 'خلفية', 'نمط',
+      'ازرار', 'أزرار', 'الازرار', 'الأزرار',
+      'لون', 'ألوان', 'الوان',
+      'نص', 'النص'];
+    const marker = '\u0001\u0001';
+    let work = text;
+    for (const kw of keywords) {
+      const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // لا يسبق الكلمة حرف عربي، ويليها فراغ أو نهاية
+      const re = new RegExp('(?<![\\u0600-\\u06FF])(?=' + escaped + '(?:\\s|$))', 'g');
+      work = work.replace(re, marker);
+    }
+    const parts = work.split(marker).map(function(x) { return x.trim(); }).filter(Boolean);
+    return parts.length > 1 ? parts : [text];
   }
 
   // ═══ 4) تحليل أمر واحد ═══
   parseOne(raw) {
     let t = this.normalize(raw.trim());
+    // نظّف رموز prompt
+    t = t.replace(/^[»>›››»»»]+\s*/, '').trim();
     if (!t || t.startsWith('#')) return null;
 
     // ═══ إنشاء تطبيق ═══

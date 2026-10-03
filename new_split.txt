@@ -1,0 +1,20 @@
+  splitCommands(text) {
+    const keywords = ['انشئ', 'انشي', 'انش', 'أضف', 'اضف',
+      'اريد', 'أريد', 'اعرض', 'شغّل', 'شغل',
+      'ابن', 'ابنِ', 'تراجع', 'خروج',
+      'ارني', 'أرني',
+      'واجهة', 'واجهه', 'خلفية', 'نمط',
+      'ازرار', 'أزرار', 'الازرار', 'الأزرار',
+      'لون', 'ألوان', 'الوان',
+      'نص', 'النص'];
+    const marker = '\u0001\u0001';
+    let work = text;
+    for (const kw of keywords) {
+      const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // لا يسبق الكلمة حرف عربي، ويليها فراغ أو نهاية
+      const re = new RegExp('(?<![\\u0600-\\u06FF])(?=' + escaped + '(?:\\s|$))', 'g');
+      work = work.replace(re, marker);
+    }
+    const parts = work.split(marker).map(function(x) { return x.trim(); }).filter(Boolean);
+    return parts.length > 1 ? parts : [text];
+  }

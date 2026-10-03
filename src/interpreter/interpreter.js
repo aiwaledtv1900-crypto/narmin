@@ -183,6 +183,14 @@ class Interpreter {
       case N.REMOVE_FROM:
       case N.UI_DONE:
         return;
+      case N.STYLE_DECL:
+        this._styles = this._styles || new Map();
+        this._styles.set(node.name, node.value);
+        return;
+      case N.STYLE_SET:
+        this._styles = this._styles || new Map();
+        this._styles.set(node.name, node.value);
+        return;
 
       // عقد واجهات أندرويد — تُعالَج في Codegen، لا في التنفيذ
       case N.SCREEN: return this.execScreen(node, env);
@@ -197,17 +205,25 @@ class Interpreter {
   }
 
   execScreen(node, env) {
-    // عند التنفيذ المباشر: اطبع ملخص الشاشة
     this.output(`[شاشة: ${node.name}]`);
-    // 1) عرّف كل الحالات أولاً (STATE_DECL) لتصبح معروفة قبل العنوان وغيره
+    // 1) عرّف كل الأنماط والحالات أولاً
+    this._styles = this._styles || new Map();
     for (const child of node.children) {
-      if (child.type === N.STATE_DECL) {
+      if (child.type === N.STYLE_DECL) {
+        this._styles.set(child.name, child.value);
+        this.output(`  🎨 نمط: ${child.name} = "${child.value}"`);
+      } else if (child.type === N.STYLE_SET) {
+        this._styles.set(child.name, child.value);
+        this.output(`  🎨 تحديث: ${child.name} = "${child.value}"`);
+      } else if (child.type === N.STATE_DECL) {
         this.execScreenElement(child, env, 1);
       }
     }
     // 2) الآن اعرض باقي العناصر
     for (const child of node.children) {
-      if (child.type !== N.STATE_DECL) {
+      if (child.type !== N.STATE_DECL &&
+          child.type !== N.STYLE_DECL &&
+          child.type !== N.STYLE_SET) {
         this.execScreenElement(child, env, 1);
       }
     }

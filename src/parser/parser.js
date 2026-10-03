@@ -80,6 +80,21 @@ class Parser {
       this.advance();
       return AST.AndroidPermission(this.expect(T.STRING, 'متوقع اسم الصلاحية').value);
     }
+    if (this.checkKw('STYLE_SET')) {
+      this.advance();
+      // لون 'اسم' "قيمة"
+      let name;
+      if (this.check(T.STRING)) name = this.advance().value;
+      else name = this.expect(T.IDENT, 'متوقع اسم النمط').value;
+      const value = this.expect(T.STRING, 'متوقع قيمة اللون').value;
+      return AST.StyleSet(name, value);
+    }
+    // نص1 "اسود" — IDENT يتبعه STRING
+    if (this.check(T.IDENT) && this.peek(1) && this.peek(1).type === T.STRING) {
+      const name = this.advance().value;
+      const value = this.advance().value;
+      return AST.StyleDecl(name, value);
+    }
     if (this.checkKw('KOTLIN_RAW')) {
       this.advance();
       return AST.KotlinRaw(this.expect(T.STRING, 'متوقع كود Kotlin').value);
@@ -175,12 +190,12 @@ class Parser {
   parseIf() {
     this.advance();
     const test = this.parseExpression();
-    const consequent = this.parseBlock();
+    const consequent = AST.Block(this.parseMixedBody(() => this.parseStatement(), ['ELSE']));
     let alternate = null;
     this.skipNewlines();
     if (this.checkKw('ELSE')) {
       this.advance();
-      alternate = this.checkKw('IF') ? this.parseIf() : this.parseBlock();
+      alternate = this.checkKw('IF') ? this.parseIf() : AST.Block(this.parseMixedBody(() => this.parseStatement()));
     }
     return AST.If(test, consequent, alternate);
   }
@@ -188,7 +203,7 @@ class Parser {
   parseWhile() {
     this.advance();
     const test = this.parseExpression();
-    const body = this.parseBlock();
+    const body = AST.Block(this.parseMixedBody(() => this.parseStatement()));
     return AST.While(test, body);
   }
 
@@ -197,7 +212,7 @@ class Parser {
     const variable = this.expect(T.IDENT, 'متوقع اسم متغير في for').value;
     this.expectKw('IN', "متوقع 'في' أو 'in'").value;
     const iterable = this.parseExpression();
-    const body = this.parseBlock();
+    const body = AST.Block(this.parseMixedBody(() => this.parseStatement()));
     return AST.For(variable, iterable, body);
   }
 
@@ -214,7 +229,7 @@ class Parser {
       this.skipNewlines();
     }
     this.expect(T.RPAREN, "متوقع ')'");
-    const body = this.parseBlock();
+    const body = AST.Block(this.parseMixedBody(() => this.parseStatement()));
     return AST.Function(name, params, body);
   }
 
@@ -231,48 +246,46 @@ class Parser {
   parseScreen() {
     this.advance(); // شاشة
     const name = this.expect(T.STRING, 'متوقع اسم الشاشة').value;
-    this.expect(T.LBRACE, "متوقع '{'");
-    const children = [];
-    this.skipNewlines();
-    while (!this.check(T.RBRACE) && !this.check(T.EOF)) {
+    const children = this.parseMixedBody(() => {
       if (this.checkKw('STATE') || this.checkKw('SAVED_STATE')) {
-        children.push(this.parseStateDecl());
-      } else {
-        children.push(this.parseUIElement());
+        return this.parseStateDecl();
       }
-      this.skipNewlines();
-    }
-    this.expect(T.RBRACE, "متوقع '}'");
+      if (this.checkKw('STYLE_SET')) {
+        return this.parseStatement();
+      }
+      if (this.check(T.IDENT) && this.peek(1) && this.peek(1).type === T.STRING) {
+        return this.parseStatement();
+      }
+      return this.parseUIElement();
+    });
     return AST.Screen(name, children);
   }
 
   parseUIElement() {
     if (this.checkKw('HEADING')) {
       this.advance();
-      return AST.UIHeading(this.parseExpression());
+      const text = this.parseExpression();
+      const colorRef = this.parseColorModifier();
+      return AST.UIHeading(text, colorRef);
     }
     if (this.checkKw('UI_TEXT')) {
       this.advance();
-      return AST.UIText(this.parseExpression());
+      const expr = this.parseExpression();
+      const colorRef = this.parseColorModifier();
+      return AST.UIText(expr, colorRef);
     }
     if (this.checkKw('UI_BUTTON')) {
       this.advance();
       const text = this.parseExpression();
+      const colorRef = this.parseColorModifier();
       this.expectKw('ON_CLICK', "متوقع 'عند_الضغط' بعد نص الزر");
-      const handler = this.parseBlock();
-      return AST.UIButton(text, handler);
+      const handler = AST.Block(this.parseMixedBody(() => this.parseStatement()));
+      return AST.UIButton(text, handler, colorRef);
     }
     if (this.checkKw('UI_CARD')) {
       this.advance();
       const title = this.parseExpression();
-      this.expect(T.LBRACE, "متوقع '{'");
-      const children = [];
-      this.skipNewlines();
-      while (!this.check(T.RBRACE) && !this.check(T.EOF)) {
-        children.push(this.parseUIElement());
-        this.skipNewlines();
-      }
-      this.expect(T.RBRACE, "متوقع '}'");
+      const children = this.parseMixedBody(() => this.parseUIElement());
       return AST.UICard(title, children);
     }
     if (this.checkKw('UI_TEXTFIELD')) {
@@ -303,14 +316,7 @@ class Parser {
     }
     if (this.checkKw('UI_ROW')) {
       this.advance();
-      this.expect(T.LBRACE, "متوقع '{'");
-      const children = [];
-      this.skipNewlines();
-      while (!this.check(T.RBRACE) && !this.check(T.EOF)) {
-        children.push(this.parseUIElement());
-        this.skipNewlines();
-      }
-      this.expect(T.RBRACE, "متوقع '}'");
+      const children = this.parseMixedBody(() => this.parseUIElement());
       return AST.UIRow(children);
     }
     if (this.checkKw('UI_SPACER')) {
@@ -388,14 +394,7 @@ class Parser {
     if (this.checkKw('UI_LIST')) {
       this.advance();
       const source = this.expect(T.IDENT, 'متوقع اسم المصفوفة').value;
-      this.expect(T.LBRACE, "متوقع '{'");
-      const template = [];
-      this.skipNewlines();
-      while (!this.check(T.RBRACE) && !this.check(T.EOF)) {
-        template.push(this.parseUIElement());
-        this.skipNewlines();
-      }
-      this.expect(T.RBRACE, "متوقع '}'");
+      const template = this.parseMixedBody(() => this.parseUIElement());
       return AST.UIList(source, template);
     }
     this.error('متوقع عنصر واجهة');
@@ -427,16 +426,56 @@ class Parser {
     return AST.StateDecl(name, init, isSaved);
   }
 
-  parseBlock() {
-    this.skipNewlines();
-    this.expect(T.LBRACE, "متوقع '{'");
+  // ═══ تحليل جسم كتلة — يقبل { ... } أو ... نهاية ═══
+  parseMixedBody(parseInner, stopKws = []) {
+    // النمط القديم: { ... }
+    if (this.check(T.LBRACE)) {
+      this.advance();
+      const body = [];
+      this.skipNewlines();
+      while (!this.check(T.RBRACE) && !this.check(T.EOF)) {
+        body.push(parseInner());
+        this.skipNewlines();
+      }
+      this.expect(T.RBRACE, "متوقع '}'");
+      return body;
+    }
+    // النمط الجديد: ... نهاية (أو حتى كلمة توقف)
     const body = [];
     this.skipNewlines();
-    while (!this.check(T.RBRACE) && !this.check(T.EOF)) {
-      body.push(this.parseStatement());
+    while (!this.checkKw('END') && !this.check(T.EOF)) {
+      let stop = false;
+      for (const kw of stopKws) {
+        if (this.checkKw(kw)) { stop = true; break; }
+      }
+      if (stop) break;
+      body.push(parseInner());
       this.skipNewlines();
     }
-    this.expect(T.RBRACE, "متوقع '}'");
+    // اقبل نهاية إن كانت متوقعة (فقط لو لا يوجد stopKws متطابق)
+    if (stopKws.length === 0 || !stopKws.some(kw => this.checkKw(kw))) {
+      if (!this.checkKw('END')) {
+        this.error("متوقع 'نهاية' أو '{'");
+      }
+      this.advance();
+    }
+    return body;
+  }
+
+  // يقرأ "بلون 'اسم'" إن وُجد ويُرجع اسم النمط
+  parseColorModifier() {
+    if (this.checkKw('WITH_COLOR')) {
+      this.advance();
+      let name;
+      if (this.check(T.STRING)) name = this.advance().value;
+      else name = this.expect(T.IDENT, 'متوقع اسم النمط').value;
+      return name;
+    }
+    return null;
+  }
+
+  parseBlock() {
+    const body = this.parseMixedBody(() => this.parseStatement());
     return AST.Block(body);
   }
 

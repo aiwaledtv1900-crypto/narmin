@@ -18,6 +18,25 @@ function escapeKotlin(s) {
 let THEME = { primary: '#1A237E', accent: '#FFC107', background: '#F5F7FA', heading: '#1A237E', onPrimary: '#FFFFFF' };
 let BUTTON_COLOR = null;
 let TEXT_COLOR = null;
+let BUTTON_TEXT_COLOR = '#FFFFFF';
+let STYLES = new Map();
+let _colorResolver = null;
+
+function resolveStyleColor(ref) {
+  if (!ref) return null;
+  // لو موجود في STYLES → احصل على القيمة
+  if (STYLES && STYLES.has(ref)) {
+    ref = STYLES.get(ref);
+  }
+  // حوّل الاسم إلى hex
+  if (_colorResolver) {
+    const hex = _colorResolver(ref);
+    if (hex) return hex;
+  }
+  // لو هو hex مباشر
+  if (/^#[0-9A-Fa-f]{6}$/.test(ref)) return ref;
+  return null;
+}
 
 function escapeXml(s) {
   return String(s)
@@ -372,12 +391,14 @@ function buildXml(children, indent = '        ') {
     if (child.type === N.STATE_DECL) continue;
     if (child.type === N.UI_HEADING) {
       const id = nextId();
+      const customColor = resolveStyleColor(child.colorRef);
+      const textColor = customColor || TEXT_COLOR || THEME.heading;
       lines.push(`${indent}<TextView`);
       lines.push(`${indent}    android:id="@+id/${id}"`);
       lines.push(`${indent}    android:layout_width="wrap_content"`);
       lines.push(`${indent}    android:layout_height="wrap_content"`);
       lines.push(`${indent}    android:text="${escapeXml(staticString(child.text))}"`);
-      lines.push(`${indent}    android:textColor="${TEXT_COLOR || THEME.heading}"`);
+      lines.push(`${indent}    android:textColor="${textColor}"`);
       lines.push(`${indent}    android:textSize="32sp"`);
       lines.push(`${indent}    android:textStyle="bold"`);
       lines.push(`${indent}    android:layout_marginTop="8dp"`);
@@ -385,26 +406,31 @@ function buildXml(children, indent = '        ') {
       child._id = id;
     } else if (child.type === N.UI_TEXT) {
       const id = nextId();
+      const customColor = resolveStyleColor(child.colorRef);
+      const textColor = customColor || TEXT_COLOR || THEME.onSurface || '#212121';
       lines.push(`${indent}<TextView`);
       lines.push(`${indent}    android:id="@+id/${id}"`);
       lines.push(`${indent}    android:layout_width="match_parent"`);
       lines.push(`${indent}    android:layout_height="wrap_content"`);
       lines.push(`${indent}    android:text="${escapeXml(staticString(child.expr))}"`);
-      lines.push(`${indent}    android:textColor="${TEXT_COLOR || THEME.onSurface || '#212121'}"`);
+      lines.push(`${indent}    android:textColor="${textColor}"`);
       lines.push(`${indent}    android:textSize="16sp"`);
       lines.push(`${indent}    android:layout_marginTop="8dp"`);
       lines.push(`${indent}    android:layout_marginBottom="8dp" />`);
       child._id = id;
     } else if (child.type === N.UI_BUTTON) {
       const id = nextId();
+      const customColor = resolveStyleColor(child.colorRef);
+      const btnBg = customColor || BUTTON_COLOR || THEME.primary;
       lines.push(`${indent}<com.google.android.material.button.MaterialButton`);
       lines.push(`${indent}    android:id="@+id/${id}"`);
       lines.push(`${indent}    android:layout_width="match_parent"`);
       lines.push(`${indent}    android:layout_height="56dp"`);
       lines.push(`${indent}    android:text="${escapeXml(staticString(child.text))}"`);
       lines.push(`${indent}    android:textSize="16sp"`);
+      lines.push(`${indent}    android:textColor="${BUTTON_TEXT_COLOR}"`);
       lines.push(`${indent}    android:layout_marginTop="16dp"`);
-      lines.push(`${indent}    app:backgroundTint="${BUTTON_COLOR || THEME.primary}"`);
+      lines.push(`${indent}    app:backgroundTint="${btnBg}"`);
       lines.push(`${indent}    app:cornerRadius="8dp" />`);
       child._id = id;
     } else if (child.type === N.UI_CARD) {
@@ -779,8 +805,26 @@ function toClassName(name) {
 function generateProject(screenNode, projectName, targetDir, extra = {}) {
   idCounter = 0;
   THEME = extra.palette || THEME;
+  STYLES = extra.styles || new Map();
+  try {
+    const pal = require('../natural/palettes');
+    _colorResolver = pal.resolveColorSmart || null;
+  } catch (_) { _colorResolver = null; }
   BUTTON_COLOR = extra.buttonColor || null;
   TEXT_COLOR = extra.textColor || null;
+  BUTTON_TEXT_COLOR = '#FFFFFF';
+  if (extra.buttonColor && extra.buttonColor !== 'MIXED') {
+    // حساب لون متباين مع خلفية الزر
+    const btnHex = extra.buttonColor;
+    if (/^#[0-9A-Fa-f]{6}$/.test(btnHex)) {
+      const r = parseInt(btnHex.slice(1,3),16), g = parseInt(btnHex.slice(3,5),16), b = parseInt(btnHex.slice(5,7),16);
+      const lum = 0.299*r + 0.587*g + 0.114*b;
+      BUTTON_TEXT_COLOR = lum > 150 ? '#000000' : '#FFFFFF';
+    }
+  } else if (extra.textColor && /^#[0-9A-Fa-f]{6}$/.test(extra.textColor)) {
+    // لو المستخدم محدد نص، استخدمه لكن اعكس لو الزر فاتح
+    BUTTON_TEXT_COLOR = '#FFFFFF';
+  }
   // خريطة افتراضية لشاشة واحدة
   CURRENT_SCREEN_MAP = new Map();
   CURRENT_SCREEN_MAP.set(screenNode.name, { cls: toClassName(projectName), index: 0 });
@@ -999,6 +1043,13 @@ function generateMultiProject(screens, projectName, targetDir, extra = {}) {
     BINDING_TYPES = stateVars;
 
     // XML
+    // اضبط الأنماط
+    STYLES = extra.styles || new Map();
+    try {
+      const pal = require('../natural/palettes');
+      _colorResolver = pal.resolveColorSmart || null;
+    } catch (_) { _colorResolver = null; }
+
     const xmlChildren = buildXml(screen.children);
     const activityXml = `<?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"

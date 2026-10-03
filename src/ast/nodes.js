@@ -18,6 +18,8 @@ const NodeType = {
   KOTLIN_IMPORT: 'KotlinImport',
   GRADLE_DEP: 'GradleDep',
   ANDROID_PERMISSION: 'AndroidPermission',
+  STYLE_DECL: 'StyleDecl',
+  STYLE_SET: 'StyleSet',
   STATE_DECL: 'StateDecl',
   NAVIGATE: 'Navigate',
   TOAST: 'Toast',
@@ -100,6 +102,8 @@ const AST = {
   KotlinImport: (path) => ({ type: NodeType.KOTLIN_IMPORT, path }),
   GradleDep: (spec) => ({ type: NodeType.GRADLE_DEP, spec }),
   AndroidPermission: (name) => ({ type: NodeType.ANDROID_PERMISSION, name }),
+  StyleDecl: (name, value) => ({ type: NodeType.STYLE_DECL, name, value }),
+  StyleSet: (name, value) => ({ type: NodeType.STYLE_SET, name, value }),
   StateDecl: (name, init, persistent = false) => ({ type: NodeType.STATE_DECL, name, init, persistent }),
   Navigate: (target) => ({ type: NodeType.NAVIGATE, target }),
   Toast: (text) => ({ type: NodeType.TOAST, text }),
@@ -141,9 +145,9 @@ const AST = {
 
   // واجهات
   Screen: (name, children) => ({ type: NodeType.SCREEN, name, children }),
-  UIHeading: (text) => ({ type: NodeType.UI_HEADING, text }),
-  UIText: (expr) => ({ type: NodeType.UI_TEXT, expr }),
-  UIButton: (text, handler) => ({ type: NodeType.UI_BUTTON, text, handler }),
+  UIHeading: (text, colorRef = null) => ({ type: NodeType.UI_HEADING, text, colorRef }),
+  UIText: (expr, colorRef = null) => ({ type: NodeType.UI_TEXT, expr, colorRef }),
+  UIButton: (text, handler, colorRef = null) => ({ type: NodeType.UI_BUTTON, text, handler, colorRef }),
   UICard: (title, children) => ({ type: NodeType.UI_CARD, title, children }),
 };
 

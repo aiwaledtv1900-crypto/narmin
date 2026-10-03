@@ -1,7 +1,7 @@
 'use strict';
 
 const { TokenType } = require('./token');
-const { KEYWORDS, isKeyword } = require('./keywords');
+const { KEYWORDS, isKeyword, normalizeArabic } = require('./keywords');
 
 class Lexer {
   constructor(source) {
@@ -83,10 +83,17 @@ class Lexer {
   readIdent() {
     const start = this.pos;
     while (this.isAlphaNum(this.peek())) this.advance();
-    const text = this.source.slice(start, this.pos);
+    let text = this.source.slice(start, this.pos);
+    // جرّب النص كما هو
     if (isKeyword(text)) {
       return { type: TokenType.KEYWORD, value: text, canonical: KEYWORDS[text] };
     }
+    // جرّب بعد تطبيع الأحرف الفارسية
+    const normalized = normalizeArabic(text);
+    if (normalized !== text && isKeyword(normalized)) {
+      return { type: TokenType.KEYWORD, value: normalized, canonical: KEYWORDS[normalized] };
+    }
+    // معرّف — نُخزّن النص الأصلي
     return { type: TokenType.IDENT, value: text };
   }
 
@@ -119,6 +126,13 @@ class Lexer {
 
       if (this.isAlpha(ch)) {
         const t = this.readIdent();
+        // تعليق: تخطَّ حتى نهاية السطر
+        if (t.type === TokenType.KEYWORD && t.canonical === 'COMMENT') {
+          while (this.pos < this.source.length && this.peek() !== '\n') {
+            this.advance();
+          }
+          continue;
+        }
         this.tokens.push({ ...t, line, col });
         continue;
       }
