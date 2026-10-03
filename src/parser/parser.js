@@ -5,9 +5,10 @@ const { TokenType: T } = require('../lexer/token');
 const { AST } = require('../ast/nodes');
 
 class Parser {
-  constructor(tokens) {
+  constructor(tokens, source = '') {
     this.tokens = tokens;
     this.pos = 0;
+    this.source = source;
   }
 
   peek(offset = 0) { return this.tokens[this.pos + offset] || this.tokens[this.tokens.length - 1]; }
@@ -642,13 +643,24 @@ class Parser {
 
   parseCall() {
     let expr = this.parsePrimary();
-    // يمكن استدعاء: Identifier | Member | Call
     const isCallable = () => {
       const t = expr.type;
       return t === 'Identifier' || t === 'MemberExpr' || t === 'CallExpr';
     };
     while (true) {
       if (this.check(T.LPAREN) && isCallable()) {
+        // افحص إن كان هناك فراغ قبل ( في النص الأصلي
+        const tok = this.current();
+        let hasSpace = false;
+        if (this.source && tok.line && tok.col) {
+          // نبحث عن الحرف قبل ( في السطر
+          const lines = this.source.split('\n');
+          const lineText = lines[tok.line - 1] || '';
+          const chBefore = lineText[tok.col - 2]; // -2 لأن col 1-based
+          hasSpace = chBefore === ' ' || chBefore === '\t';
+        }
+        if (hasSpace) break; // مسافة → خصائص، ليست استدعاء
+
         this.advance();
         this.skipNewlines();
         const args = [];
@@ -801,7 +813,7 @@ class Parser {
 
 function parse(source) {
   const tokens = tokenize(source);
-  return new Parser(tokens).parseProgram();
+  return new Parser(tokens, source).parseProgram();
 }
 
 module.exports = { Parser, parse };
