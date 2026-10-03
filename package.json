@@ -1,0 +1,43 @@
+{
+  "name": "narmin",
+  "version": "0.1.0",
+  "description": "لغة برمجة عربية-إنجليزية حديثة لأتمتة Termux والأندرويد وتعديل APK",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "bin": {
+    "narmin": "src/cli.js",
+    "narm": "src/cli.js"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "repl": "node src/cli.js repl",
+    "demo": "node src/cli.js run examples/demo.narm"
+  },
+  "files": [
+    "src/",
+    "examples/",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "narmin",
+    "نارمين",
+    "arabic",
+    "programming-language",
+    "compiler",
+    "interpreter",
+    "termux",
+    "android",
+    "apk",
+    "reverse-engineering"
+  ],
+  "author": "DEV",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DEV/narmin"
+  }
+}

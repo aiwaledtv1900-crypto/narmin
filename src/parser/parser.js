@@ -1,0 +1,395 @@
+'use strict';
+
+const { tokenize } = require('../lexer/lexer');
+const { TokenType: T } = require('../lexer/token');
+const { AST } = require('../ast/nodes');
+
+class Parser {
+  constructor(tokens) {
+    this.tokens = tokens;
+    this.pos = 0;
+  }
+
+  peek(offset = 0) { return this.tokens[this.pos + offset] || this.tokens[this.tokens.length - 1]; }
+  current() { return this.tokens[this.pos]; }
+  advance() { return this.tokens[this.pos++]; }
+
+  check(type) { return this.current().type === type; }
+  checkKw(canonical) {
+    const t = this.current();
+    return t.type === T.KEYWORD && t.canonical === canonical;
+  }
+
+  match(...types) {
+    if (types.includes(this.current().type)) { this.advance(); return true; }
+    return false;
+  }
+  matchKw(...canonicals) {
+    const t = this.current();
+    if (t.type === T.KEYWORD && canonicals.includes(t.canonical)) { this.advance(); return true; }
+    return false;
+  }
+
+  expect(type, msg) {
+    if (!this.check(type)) this.error(msg || `متوقع ${type}`);
+    return this.advance();
+  }
+  expectKw(canonical, msg) {
+    if (!this.checkKw(canonical)) this.error(msg || `متوقع '${canonical}'`);
+    return this.advance();
+  }
+
+  error(msg) {
+    const t = this.current();
+    throw new Error(`${msg} — السطر ${t.line}، العمود ${t.col} (وجدنا ${t.type}${t.value ? ` "${t.value}"` : ''})`);
+  }
+
+  skipNewlines() {
+    while (this.check(T.NEWLINE) || this.check(T.SEMICOLON)) this.advance();
+  }
+
+  parseProgram() {
+    const body = [];
+    this.skipNewlines();
+    while (!this.check(T.EOF)) {
+      body.push(this.parseStatement());
+      this.skipNewlines();
+    }
+    return AST.Program(body);
+  }
+
+  // ═══ الجمل ═══
+  parseStatement() {
+    if (this.checkKw('PRINT')) return this.parsePrint();
+    if (this.checkKw('LET')) return this.parseLet(false);
+    if (this.checkKw('CONST')) return this.parseLet(true);
+    if (this.checkKw('IF')) return this.parseIf();
+    if (this.checkKw('WHILE')) return this.parseWhile();
+    if (this.checkKw('FOR')) return this.parseFor();
+    if (this.checkKw('FUNCTION')) return this.parseFunction();
+    if (this.checkKw('RETURN')) return this.parseReturn();
+    if (this.checkKw('BREAK')) { this.advance(); return AST.Break(); }
+    if (this.checkKw('CONTINUE')) { this.advance(); return AST.Continue(); }
+    if (this.check(T.LBRACE)) return this.parseBlock();
+
+    return this.parseAssignOrExpr();
+  }
+
+  // جملة إسناد أو تعبير عادي
+  parseAssignOrExpr() {
+    const expr = this.parseExpression();
+
+    if (this.check(T.ASSIGN)) {
+      // الهدف يجب أن يكون identifier أو member أو index
+      if (expr.type !== 'Identifier' && expr.type !== 'MemberExpr' && expr.type !== 'IndexExpr') {
+        this.error('هدف الإسناد يجب أن يكون متغيراً أو خاصية');
+      }
+      this.advance(); // =
+      const value = this.parseExpression();
+      return AST.Assign(expr, value);
+    }
+
+    return AST.ExprStmt(expr);
+  }
+
+  parsePrint() {
+    this.advance();
+    const arg = this.parseExpression();
+    return AST.Print(arg);
+  }
+
+  parseLet(isConst) {
+    this.advance();
+    const name = this.expect(T.IDENT, 'متوقع اسم المتغير').value;
+    let init = null;
+    if (this.match(T.ASSIGN)) init = this.parseExpression();
+    return isConst ? AST.Const(name, init) : AST.Let(name, init, true);
+  }
+
+  parseIf() {
+    this.advance();
+    const test = this.parseExpression();
+    const consequent = this.parseBlock();
+    let alternate = null;
+    this.skipNewlines();
+    if (this.checkKw('ELSE')) {
+      this.advance();
+      alternate = this.checkKw('IF') ? this.parseIf() : this.parseBlock();
+    }
+    return AST.If(test, consequent, alternate);
+  }
+
+  parseWhile() {
+    this.advance();
+    const test = this.parseExpression();
+    const body = this.parseBlock();
+    return AST.While(test, body);
+  }
+
+  parseFor() {
+    this.advance();
+    const variable = this.expect(T.IDENT, 'متوقع اسم متغير في for').value;
+    this.expectKw('IN', "متوقع 'في' أو 'in'").value;
+    const iterable = this.parseExpression();
+    const body = this.parseBlock();
+    return AST.For(variable, iterable, body);
+  }
+
+  parseFunction() {
+    this.advance();
+    const name = this.expect(T.IDENT, 'متوقع اسم الدالة').value;
+    this.expect(T.LPAREN, "متوقع '('");
+    const params = [];
+    while (!this.check(T.RPAREN) && !this.check(T.EOF)) {
+      params.push(this.expect(T.IDENT, 'متوقع اسم معامل').value);
+      if (!this.match(T.COMMA)) break;
+    }
+    this.expect(T.RPAREN, "متوقع ')'");
+    const body = this.parseBlock();
+    return AST.Function(name, params, body);
+  }
+
+  parseReturn() {
+    this.advance();
+    let arg = null;
+    if (!this.check(T.NEWLINE) && !this.check(T.SEMICOLON) && !this.check(T.RBRACE) && !this.check(T.EOF)) {
+      arg = this.parseExpression();
+    }
+    return AST.Return(arg);
+  }
+
+  parseBlock() {
+    this.skipNewlines();
+    this.expect(T.LBRACE, "متوقع '{'");
+    const body = [];
+    this.skipNewlines();
+    while (!this.check(T.RBRACE) && !this.check(T.EOF)) {
+      body.push(this.parseStatement());
+      this.skipNewlines();
+    }
+    this.expect(T.RBRACE, "متوقع '}'");
+    return AST.Block(body);
+  }
+
+  // ═══ التعابير ═══
+  parseExpression() { return this.parsePipe(); }
+
+  parsePipe() {
+    let left = this.parseOr();
+    while (this.match(T.PIPE)) {
+      const right = this.parseOr();
+      left = AST.Pipe(left, right);
+    }
+    return left;
+  }
+
+  parseOr() {
+    let left = this.parseAnd();
+    while (this.matchKw('OR_KW') || this.match(T.OR)) {
+      const right = this.parseAnd();
+      left = AST.Binary('||', left, right);
+    }
+    return left;
+  }
+
+  parseAnd() {
+    let left = this.parseEquality();
+    while (this.matchKw('AND_KW') || this.match(T.AND)) {
+      const right = this.parseEquality();
+      left = AST.Binary('&&', left, right);
+    }
+    return left;
+  }
+
+  parseEquality() {
+    let left = this.parseComparison();
+    while (this.check(T.EQ) || this.check(T.NEQ)) {
+      const op = this.advance().type === T.EQ ? '==' : '!=';
+      const right = this.parseComparison();
+      left = AST.Binary(op, left, right);
+    }
+    return left;
+  }
+
+  parseComparison() {
+    let left = this.parseTerm();
+    while (this.check(T.LT) || this.check(T.GT) || this.check(T.LTE) || this.check(T.GTE)) {
+      const tok = this.advance();
+      const map = { LT: '<', GT: '>', LTE: '<=', GTE: '>=' };
+      const right = this.parseTerm();
+      left = AST.Binary(map[tok.type], left, right);
+    }
+    return left;
+  }
+
+  parseTerm() {
+    let left = this.parseFactor();
+    while (this.check(T.PLUS) || this.check(T.MINUS)) {
+      const op = this.advance().type === T.PLUS ? '+' : '-';
+      const right = this.parseFactor();
+      left = AST.Binary(op, left, right);
+    }
+    return left;
+  }
+
+  parseFactor() {
+    let left = this.parseUnary();
+    while (this.check(T.STAR) || this.check(T.SLASH) || this.check(T.PERCENT)) {
+      const tok = this.advance();
+      const map = { STAR: '*', SLASH: '/', PERCENT: '%' };
+      const right = this.parseUnary();
+      left = AST.Binary(map[tok.type], left, right);
+    }
+    return left;
+  }
+
+  parseUnary() {
+    if (this.check(T.MINUS) || this.check(T.NOT) || this.checkKw('NOT_KW')) {
+      const tok = this.advance();
+      const op = tok.type === T.MINUS ? '-' : '!';
+      const arg = this.parseUnary();
+      return AST.Unary(op, arg, true);
+    }
+    return this.parseCall();
+  }
+
+  parseCall() {
+    let expr = this.parsePrimary();
+    while (true) {
+      if (this.check(T.LPAREN)) {
+        this.advance();
+        const args = [];
+        while (!this.check(T.RPAREN) && !this.check(T.EOF)) {
+          args.push(this.parseExpression());
+          if (!this.match(T.COMMA)) break;
+        }
+        this.expect(T.RPAREN, "متوقع ')'");
+        expr = AST.Call(expr, args);
+      } else if (this.check(T.DOT)) {
+        this.advance();
+        const prop = this.expect(T.IDENT, 'متوقع اسم خاصية بعد النقطة').value;
+        expr = AST.Member(expr, prop);
+      } else if (this.check(T.LBRACKET)) {
+        this.advance();
+        const idx = this.parseExpression();
+        this.expect(T.RBRACKET, "متوقع ']'");
+        expr = AST.Index(expr, idx);
+      } else break;
+    }
+    return expr;
+  }
+
+  parsePrimary() {
+    const tok = this.current();
+
+    if (tok.type === T.NUMBER) { this.advance(); return AST.Number(tok.value); }
+    if (tok.type === T.STRING) { this.advance(); return AST.String(tok.value); }
+    if (tok.type === T.IDENT) { this.advance(); return AST.Identifier(tok.value); }
+
+    if (tok.type === T.KEYWORD) {
+      if (tok.canonical === 'TRUE') { this.advance(); return AST.Boolean(true); }
+      if (tok.canonical === 'FALSE') { this.advance(); return AST.Boolean(false); }
+      if (tok.canonical === 'NULL') { this.advance(); return AST.Null(); }
+    }
+
+    if (this.match(T.LPAREN)) {
+      const expr = this.parseExpression();
+      this.expect(T.RPAREN, "متوقع ')'");
+      return expr;
+    }
+
+    if (this.check(T.LBRACKET)) return this.parseArray();
+    if (this.check(T.LBRACE)) return this.parseObject();
+    if (this.checkKw('IF')) return this.parseIfExpr();
+
+    this.error('تعبير غير متوقع');
+  }
+
+  // if كتعبير — يُرجع قيمة
+  parseIfExpr() {
+    this.advance(); // اذا
+    const test = this.parseExpression();
+    const consequent = this.parseValueBlock();
+    this.skipNewlines();
+    let alternate = null;
+    if (this.checkKw('ELSE')) {
+      this.advance();
+      alternate = this.checkKw('IF') ? this.parseIfExpr() : this.parseValueBlock();
+    }
+    return AST.IfExpr(test, consequent, alternate);
+  }
+
+  // كتلة قيمة — { expr } أو { اطبع... } أو حتى { if... return... }
+  // للـ if-expr: الكتلة يجب أن تكون إما { expr } واحدة أو { statements... }
+  parseValueBlock() {
+    this.skipNewlines();
+    this.expect(T.LBRACE, "متوقع '{'");
+    this.skipNewlines();
+
+    const body = [];
+    while (!this.check(T.RBRACE) && !this.check(T.EOF)) {
+      body.push(this.parseStatement());
+      this.skipNewlines();
+    }
+    this.expect(T.RBRACE, "متوقع '}'");
+    return AST.Block(body);
+  }
+
+  parseObject() {
+    this.advance(); // {
+    const properties = [];
+    this.skipNewlines();
+    while (!this.check(T.RBRACE) && !this.check(T.EOF)) {
+      // المفتاح: ident أو نص أو كلمة مفتاحية (نسمح بكل الحالات)
+      const keyTok = this.current();
+      let key;
+      if (keyTok.type === T.IDENT) {
+        key = keyTok.value;
+        this.advance();
+      } else if (keyTok.type === T.STRING) {
+        key = keyTok.value;
+        this.advance();
+      } else if (keyTok.type === T.KEYWORD) {
+        // اسمح للكلمات المفتاحية كمفاتيح (مثل: نوع، قيمة)
+        key = keyTok.value;
+        this.advance();
+      } else if (keyTok.type === T.NUMBER) {
+        key = String(keyTok.value);
+        this.advance();
+      } else {
+        this.error('متوقع اسم خاصية');
+      }
+
+      this.expect(T.COLON, "متوقع ':' بعد اسم الخاصية");
+      const value = this.parseExpression();
+      properties.push({ key, value });
+
+      this.skipNewlines();
+      if (!this.match(T.COMMA)) break;
+      this.skipNewlines();
+    }
+    this.expect(T.RBRACE, "متوقع '}'");
+    return AST.Object(properties);
+  }
+
+  parseArray() {
+    this.advance();
+    const elements = [];
+    this.skipNewlines();
+    while (!this.check(T.RBRACKET) && !this.check(T.EOF)) {
+      elements.push(this.parseExpression());
+      this.skipNewlines();
+      if (!this.match(T.COMMA)) break;
+      this.skipNewlines();
+    }
+    this.expect(T.RBRACKET, "متوقع ']'");
+    return AST.Array(elements);
+  }
+}
+
+function parse(source) {
+  const tokens = tokenize(source);
+  return new Parser(tokens).parseProgram();
+}
+
+module.exports = { Parser, parse };
