@@ -65,6 +65,31 @@ function sizeToLayout(value, fallback = 'match_parent') {
   return fallback;
 }
 
+function propsVal(props, key) {
+  if (!props || !props[key]) return null;
+  return props[key];
+}
+
+function propsColor(props, key) {
+  if (!props || !props[key]) return null;
+  const val = props[key];
+  // إذا كان Identifier → ابحث في STYLES
+  if (val.type === 'Identifier' || val.type === 'StringLiteral') {
+    return resolveStyleColor(val.value || val.name);
+  }
+  return resolveStyleColor(staticString(val));
+}
+
+function propsSize(props, key, fallback = null) {
+  if (!props || !props[key]) return fallback;
+  return sizeToLayout(staticString(props[key]), fallback);
+}
+
+function propsCorners(props) {
+  if (!props || !props.corners) return null;
+  return cornersToRadius(staticString(props.corners));
+}
+
 function escapeXml(s) {
   return String(s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -447,26 +472,33 @@ function buildXml(children, indent = '        ') {
       child._id = id;
     } else if (child.type === N.UI_BUTTON) {
       const id = nextId();
-      const customColor = resolveStyleColor(child.colorRef);
+      const customColor = propsColor(child.props, 'color') || resolveStyleColor(child.colorRef);
       const btnBg = customColor || BUTTON_COLOR || THEME.primary;
+      const corners = propsCorners(child.props) || '8';
+      const width = propsSize(child.props, 'width', 'match_parent');
+      const height = propsSize(child.props, 'height', '56dp');
       lines.push(`${indent}<com.google.android.material.button.MaterialButton`);
       lines.push(`${indent}    android:id="@+id/${id}"`);
-      lines.push(`${indent}    android:layout_width="match_parent"`);
-      lines.push(`${indent}    android:layout_height="56dp"`);
+      lines.push(`${indent}    android:layout_width="${width}"`);
+      lines.push(`${indent}    android:layout_height="${height}"`);
       lines.push(`${indent}    android:text="${escapeXml(staticString(child.text))}"`);
       lines.push(`${indent}    android:textSize="16sp"`);
       lines.push(`${indent}    android:textColor="${BUTTON_TEXT_COLOR}"`);
       lines.push(`${indent}    android:layout_marginTop="16dp"`);
       lines.push(`${indent}    app:backgroundTint="${btnBg}"`);
-      lines.push(`${indent}    app:cornerRadius="8dp" />`);
+      lines.push(`${indent}    app:cornerRadius="${corners}dp" />`);
       child._id = id;
     } else if (child.type === N.UI_CARD) {
       const title = staticString(child.title);
+      const customColor = propsColor(child.props, 'color');
+      const cardBg = customColor || '#FFFFFF';
+      const corners = propsCorners(child.props) || '12';
+      const width = propsSize(child.props, 'width', 'match_parent');
       lines.push(`${indent}<com.google.android.material.card.MaterialCardView`);
-      lines.push(`${indent}    android:layout_width="match_parent"`);
+      lines.push(`${indent}    android:layout_width="${width}"`);
       lines.push(`${indent}    android:layout_height="wrap_content"`);
       lines.push(`${indent}    android:layout_marginTop="16dp"`);
-      lines.push(`${indent}    app:cardCornerRadius="12dp"`);
+      lines.push(`${indent}    app:cardCornerRadius="${corners}dp"`);
       lines.push(`${indent}    app:cardElevation="2dp">`);
       lines.push('');
       lines.push(`${indent}    <LinearLayout`);
@@ -491,21 +523,26 @@ function buildXml(children, indent = '        ') {
       child._id = nextId();
     } else if (child.type === N.UI_TEXTFIELD) {
       const id = nextId();
-      // نوع الإدخال يتبع نوع الحالة المرتبطة
+      const customColor = propsColor(child.props, 'color');
+      const strokeColor = customColor || THEME.primary;
+      const corners = propsCorners(child.props) || '8';
+      const width = propsSize(child.props, 'width', 'match_parent');
       let inputType = 'text';
       if (child.binding && BINDING_TYPES && BINDING_TYPES.has(child.binding)) {
         const t = BINDING_TYPES.get(child.binding).type;
         if (t === 'Double') inputType = 'numberDecimal';
-        else if (t === 'Boolean') inputType = 'text';
-        else inputType = 'text';
       }
       lines.push(`${indent}<com.google.android.material.textfield.TextInputLayout`);
-      lines.push(`${indent}    android:layout_width="match_parent"`);
+      lines.push(`${indent}    android:layout_width="${width}"`);
       lines.push(`${indent}    android:layout_height="wrap_content"`);
       lines.push(`${indent}    android:hint="${escapeXml(staticString(child.hint))}"`);
       lines.push(`${indent}    android:layout_marginTop="12dp"`);
-      lines.push(`${indent}    app:boxStrokeColor="${THEME.primary}"`);
-      lines.push(`${indent}    app:boxStrokeWidth="2dp">`);
+      lines.push(`${indent}    app:boxStrokeColor="${strokeColor}"`);
+      lines.push(`${indent}    app:boxStrokeWidth="2dp"`);
+      lines.push(`${indent}    app:boxCornerRadiusTopStart="${corners}dp"`);
+      lines.push(`${indent}    app:boxCornerRadiusTopEnd="${corners}dp"`);
+      lines.push(`${indent}    app:boxCornerRadiusBottomStart="${corners}dp"`);
+      lines.push(`${indent}    app:boxCornerRadiusBottomEnd="${corners}dp">`);
       lines.push('');
       lines.push(`${indent}    <com.google.android.material.textfield.TextInputEditText`);
       lines.push(`${indent}        android:id="@+id/${id}"`);

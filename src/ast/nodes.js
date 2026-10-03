@@ -78,7 +78,7 @@ const NodeType = {
 
 const AST = {
   Program: (body) => ({ type: NodeType.PROGRAM, body }),
-  UICard: (title, children) => ({ type: NodeType.UI_CARD, title, children }),
+  UICard: (title, children, props = {}) => ({ type: NodeType.UI_CARD, title, children, props }),
   UITextField: (hint) => ({ type: NodeType.UI_TEXTFIELD, hint }),
   UIImage: (name) => ({ type: NodeType.UI_IMAGE, name }),
   UICheckBox: (text) => ({ type: NodeType.UI_CHECKBOX, text }),
@@ -111,7 +111,7 @@ const AST = {
   Toast: (text) => ({ type: NodeType.TOAST, text }),
   Alert: (title, message, handler) => ({ type: NodeType.ALERT, title, message, handler }),
   Back: () => ({ type: NodeType.BACK }),
-  UITextField: (hint, binding) => ({ type: NodeType.UI_TEXTFIELD, hint, binding }),
+  UITextField: (hint, binding, props = {}) => ({ type: NodeType.UI_TEXTFIELD, hint, binding, props }),
 
   Number: (value) => ({ type: NodeType.NUMBER, value }),
   String: (value) => ({ type: NodeType.STRING, value }),
@@ -147,9 +147,9 @@ const AST = {
 
   // واجهات
   Screen: (name, children) => ({ type: NodeType.SCREEN, name, children }),
-  UIHeading: (text, colorRef = null) => ({ type: NodeType.UI_HEADING, text, colorRef }),
-  UIText: (expr, colorRef = null) => ({ type: NodeType.UI_TEXT, expr, colorRef }),
-  UIButton: (text, handler, colorRef = null) => ({ type: NodeType.UI_BUTTON, text, handler, colorRef }),
+  UIHeading: (text, colorRef = null, props = {}) => ({ type: NodeType.UI_HEADING, text, colorRef, props }),
+  UIText: (expr, colorRef = null, props = {}) => ({ type: NodeType.UI_TEXT, expr, colorRef, props }),
+  UIButton: (text, handler, colorRef = null, props = {}) => ({ type: NodeType.UI_BUTTON, text, handler, colorRef, props }),
   UICard: (title, children) => ({ type: NodeType.UI_CARD, title, children }),
 };
 

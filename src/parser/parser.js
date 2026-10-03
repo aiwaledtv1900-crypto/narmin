@@ -266,27 +266,31 @@ class Parser {
       this.advance();
       const text = this.parseExpression();
       const colorRef = this.parseColorModifier();
-      return AST.UIHeading(text, colorRef);
+      const props = this.parseProps();
+      return AST.UIHeading(text, colorRef, props);
     }
     if (this.checkKw('UI_TEXT')) {
       this.advance();
       const expr = this.parseExpression();
       const colorRef = this.parseColorModifier();
-      return AST.UIText(expr, colorRef);
+      const props = this.parseProps();
+      return AST.UIText(expr, colorRef, props);
     }
     if (this.checkKw('UI_BUTTON')) {
       this.advance();
       const text = this.parseExpression();
       const colorRef = this.parseColorModifier();
+      const props = this.parseProps();
       this.expectKw('ON_CLICK', "متوقع 'عند_الضغط' بعد نص الزر");
       const handler = AST.Block(this.parseMixedBody(() => this.parseStatement()));
-      return AST.UIButton(text, handler, colorRef);
+      return AST.UIButton(text, handler, colorRef, props);
     }
     if (this.checkKw('UI_CARD')) {
       this.advance();
       const title = this.parseExpression();
+      const props = this.parseProps();
       const children = this.parseMixedBody(() => this.parseUIElement());
-      return AST.UICard(title, children);
+      return AST.UICard(title, children, props);
     }
     if (this.checkKw('UI_TEXTFIELD')) {
       this.advance();
@@ -296,7 +300,8 @@ class Parser {
         this.advance();
         binding = this.expect(T.IDENT, 'متوقع اسم المتغير').value;
       }
-      return AST.UITextField(hint, binding);
+      const props = this.parseProps();
+      return AST.UITextField(hint, binding, props);
     }
     if (this.checkKw('UI_IMAGE')) {
       this.advance();
@@ -492,7 +497,7 @@ class Parser {
     this.advance();
     this.skipNewlines();
 
-    // ترجمة المفاتيح العربية إلى إنجليزية
+    // ترجمة المفاتيح — عربي أو إنجليزي، IDENT أو KEYWORD
     const KEY_MAP = {
       'لون': 'color', 'color': 'color',
       'حجم': 'size', 'size': 'size',
@@ -501,6 +506,16 @@ class Parser {
       'العرض': 'width', 'width': 'width',
       'الطول': 'height', 'height': 'height',
       'نوع': 'kind', 'kind': 'kind',
+    };
+    // مفاتيح بوصفها كلمات مفتاحية
+    const KW_MAP = {
+      'STYLE_SET': 'color',
+      'STYLE_SIZE': 'size',
+      'UI_TEXT': 'text',
+      'STYLE_CORNERS': 'corners',
+      'STYLE_WIDTH': 'width',
+      'STYLE_HEIGHT': 'height',
+      'STYLE_KIND': 'kind',
     };
 
     while (!this.check(T.RPAREN) && !this.check(T.EOF)) {
@@ -512,21 +527,15 @@ class Parser {
 
       if (keyTok.type === T.IDENT) {
         const raw = keyTok.value;
-        key = KEY_MAP[raw] || raw;
-        this.advance();
+        key = KEY_MAP[raw] || null;
+        if (key) this.advance();
       } else if (keyTok.type === T.KEYWORD) {
-        // كلمات مفتاحية مثل STYLE_SET/STYLE_SIZE
-        const map = {
-          'STYLE_SET': 'color',
-          'STYLE_SIZE': 'size',
-          'UI_TEXT': 'text',
-          'STYLE_CORNERS': 'corners',
-          'STYLE_WIDTH': 'width',
-          'STYLE_HEIGHT': 'height',
-          'STYLE_KIND': 'kind',
-        };
-        if (map[keyTok.canonical]) {
-          key = map[keyTok.canonical];
+        // جرب الكلمة المفتاحية
+        if (KW_MAP[keyTok.canonical]) {
+          key = KW_MAP[keyTok.canonical];
+          this.advance();
+        } else if (KEY_MAP[keyTok.value]) {
+          key = KEY_MAP[keyTok.value];
           this.advance();
         }
       }
@@ -633,8 +642,13 @@ class Parser {
 
   parseCall() {
     let expr = this.parsePrimary();
+    // يمكن استدعاء: Identifier | Member | Call
+    const isCallable = () => {
+      const t = expr.type;
+      return t === 'Identifier' || t === 'MemberExpr' || t === 'CallExpr';
+    };
     while (true) {
-      if (this.check(T.LPAREN)) {
+      if (this.check(T.LPAREN) && isCallable()) {
         this.advance();
         this.skipNewlines();
         const args = [];
@@ -649,7 +663,6 @@ class Parser {
       } else if (this.check(T.DOT)) {
         this.advance();
         const tok = this.current();
-        // اسمح للكلمات المفتاحية كأسماء خصائص بعد النقطة
         if (tok.type === T.IDENT) {
           this.advance();
           expr = AST.Member(expr, tok.value);
