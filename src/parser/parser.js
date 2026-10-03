@@ -362,6 +362,9 @@ class Parser {
       this.advance();
       return AST.UIDone();
     }
+    if (this.checkKw('UI_TOPBAR')) {
+      return this.parseTopBar();
+    }
     if (this.checkKw('BOTTOM_SHEET')) {
       this.advance();
       const title = this.parseExpression();
@@ -472,6 +475,73 @@ class Parser {
       return name;
     }
     return null;
+  }
+
+  // ═══ الشريط العلوي ═══
+  parseTopBar() {
+    this.advance();
+    const props = this.parseProps();
+    return AST.UITopBar(props);
+  }
+
+  // ═══ قراءة الخصائص — ( لون X حجم Y حواف Z ) ═══
+  parseProps() {
+    const props = {};
+    if (!this.check(T.LPAREN)) return props;
+
+    this.advance();
+    this.skipNewlines();
+
+    // ترجمة المفاتيح العربية إلى إنجليزية
+    const KEY_MAP = {
+      'لون': 'color', 'color': 'color',
+      'حجم': 'size', 'size': 'size',
+      'نص': 'text', 'text': 'text',
+      'حواف': 'corners', 'corners': 'corners',
+      'العرض': 'width', 'width': 'width',
+      'الطول': 'height', 'height': 'height',
+      'نوع': 'kind', 'kind': 'kind',
+    };
+
+    while (!this.check(T.RPAREN) && !this.check(T.EOF)) {
+      this.skipNewlines();
+      if (this.check(T.RPAREN)) break;
+
+      const keyTok = this.current();
+      let key = null;
+
+      if (keyTok.type === T.IDENT) {
+        const raw = keyTok.value;
+        key = KEY_MAP[raw] || raw;
+        this.advance();
+      } else if (keyTok.type === T.KEYWORD) {
+        // كلمات مفتاحية مثل STYLE_SET/STYLE_SIZE
+        const map = {
+          'STYLE_SET': 'color',
+          'STYLE_SIZE': 'size',
+          'UI_TEXT': 'text',
+          'STYLE_CORNERS': 'corners',
+          'STYLE_WIDTH': 'width',
+          'STYLE_HEIGHT': 'height',
+          'STYLE_KIND': 'kind',
+        };
+        if (map[keyTok.canonical]) {
+          key = map[keyTok.canonical];
+          this.advance();
+        }
+      }
+
+      if (!key) break;
+      this.skipNewlines();
+      if (this.check(T.RPAREN) || this.check(T.EOF)) break;
+
+      const value = this.parseExpression();
+      props[key] = value;
+      this.skipNewlines();
+    }
+
+    if (this.check(T.RPAREN)) this.advance();
+    return props;
   }
 
   parseBlock() {

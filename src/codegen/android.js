@@ -38,6 +38,33 @@ function resolveStyleColor(ref) {
   return null;
 }
 
+function cornersToRadius(value, width = null, height = null) {
+  if (!value) return '8';
+  const v = String(value).trim();
+  if (v === 'مربع' || v === 'square') return '0';
+  if (v === 'دايري' || v === 'circle') {
+    // نصف قطر دائري
+    if (width && height) {
+      const w = parseInt(width), h = parseInt(height);
+      if (!isNaN(w) && !isNaN(h)) return String(Math.round(Math.min(w, h) / 2));
+    }
+    return '999';
+  }
+  if (v === 'بيضاوي' || v === 'oval') return '24';
+  if (v === 'متوسط' || v === 'medium') return '12';
+  if (/^\d+$/.test(v)) return v;
+  return '8';
+}
+
+function sizeToLayout(value, fallback = 'match_parent') {
+  if (!value) return fallback;
+  const v = String(value).trim();
+  if (v === 'كامل' || v === 'full') return 'match_parent';
+  if (v === 'تلقائي' || v === 'auto') return 'wrap_content';
+  if (/^\d+$/.test(v)) return v + 'dp';
+  return fallback;
+}
+
 function escapeXml(s) {
   return String(s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -550,6 +577,29 @@ function buildXml(children, indent = '        ') {
       lines.push(`${indent}    android:background="#E0E0E0"`);
       lines.push(`${indent}    android:layout_marginTop="12dp"`);
       lines.push(`${indent}    android:layout_marginBottom="12dp" />`);
+    } else if (child.type === N.UI_TOPBAR) {
+      const id = nextId();
+      const bgColor = (child.props.color ? resolveStyleColor(staticString(child.props.color)) : null) || THEME.primary;
+      const txtColor = '#FFFFFF';
+      const sizeNum = child.props.size ? staticString(child.props.size) : '60';
+      const textVal = child.props.text ? staticString(child.props.text) : '';
+      lines.push(`${indent}<LinearLayout`);
+      lines.push(`${indent}    android:id="@+id/${id}"`);
+      lines.push(`${indent}    android:layout_width="match_parent"`);
+      lines.push(`${indent}    android:layout_height="${sizeNum}dp"`);
+      lines.push(`${indent}    android:background="${bgColor}"`);
+      lines.push(`${indent}    android:gravity="center_vertical|start"`);
+      lines.push(`${indent}    android:paddingHorizontal="16dp"`);
+      lines.push(`${indent}    android:layout_marginBottom="12dp">`);
+      lines.push('');
+      lines.push(`${indent}    <TextView`);
+      lines.push(`${indent}        android:layout_width="wrap_content"`);
+      lines.push(`${indent}        android:layout_height="wrap_content"`);
+      lines.push(`${indent}        android:text="${escapeXml(textVal)}"`);
+      lines.push(`${indent}        android:textColor="${txtColor}"`);
+      lines.push(`${indent}        android:textSize="20sp"`);
+      lines.push(`${indent}        android:textStyle="bold" />`);
+      lines.push(`${indent}</LinearLayout>`);
     } else if (child.type === N.UI_ROW) {
       lines.push(`${indent}<LinearLayout`);
       lines.push(`${indent}    android:layout_width="match_parent"`);
@@ -836,27 +886,7 @@ function generateProject(screenNode, projectName, targetDir, extra = {}) {
 
   // XML
   const xmlChildren = buildXml(screenNode.children);
-  const activityXml = `<?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="${THEME.background}"
-    android:layoutDirection="rtl">
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="24dp"
-        android:fontFamily="sans-serif">
-
-${xmlChildren}
-
-    </LinearLayout>
-</ScrollView>
-`;
-
+  
   // Kotlin
   const ktBody = buildKotlinBody(screenNode.children, '        ', stateVars) || '        // لا شيء';
   const updateUIBody = buildUpdateUI(screenNode.children, stateVars) || '        // لا شيء ديناميكي';
@@ -1050,27 +1080,68 @@ function generateMultiProject(screens, projectName, targetDir, extra = {}) {
       _colorResolver = pal.resolveColorSmart || null;
     } catch (_) { _colorResolver = null; }
 
-    const xmlChildren = buildXml(screen.children);
+    const topBarNode = screen.children.find(c => c.type === N.UI_TOPBAR);
+    const mainChildren = screen.children.filter(c => c.type !== N.UI_TOPBAR);
+
+    let topBarXml = '';
+    if (topBarNode) {
+      const props = topBarNode.props || {};
+      const bgColor = props.color ? (resolveStyleColor(staticString(props.color)) || THEME.primary) : THEME.primary;
+      const txtColor = '#FFFFFF';
+      const sizeNum = props.size ? String(staticString(props.size)) : '60';
+      const textVal = props.text ? staticString(props.text) : screen.name;
+      topBarXml = `    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="${sizeNum}dp"
+        android:background="${bgColor}"
+        android:gravity="center_vertical|start"
+        android:paddingHorizontal="20dp"
+        android:layoutDirection="rtl">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="${escapeXml(textVal)}"
+            android:textColor="${txtColor}"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+`;
+    }
+
+    const xmlChildrenMain = buildXml(mainChildren);
+
     const activityXml = `<?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:orientation="vertical"
     android:background="${THEME.background}"
     android:layoutDirection="rtl">
 
-    <LinearLayout
+${topBarXml}
+    <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="24dp">
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
 
-${xmlChildren}
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp"
+            android:fontFamily="sans-serif">
 
-    </LinearLayout>
-</ScrollView>
+${xmlChildrenMain}
+
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>
 `;
-    const layoutName = 'activity_' + info.cls.replace('Activity', '').toLowerCase();
+    
+        const layoutName = 'activity_' + info.cls.replace('Activity', '').toLowerCase();
     fs.writeFileSync(path.join(targetDir, `app/src/main/res/layout/${layoutName}.xml`), activityXml, 'utf8');
 
     // Kotlin

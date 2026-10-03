@@ -182,6 +182,7 @@ class Interpreter {
       case N.UI_LIST:
       case N.REMOVE_FROM:
       case N.UI_DONE:
+      case N.UI_TOPBAR:
         return;
       case N.STYLE_DECL:
         this._styles = this._styles || new Map();
@@ -292,6 +293,12 @@ class Interpreter {
       this.output(`${pad}  📋 ورقة: ${this.eval(node.title, env)}`);
     } else if (node.type === N.TAB_LAYOUT) {
       this.output(`${pad}  📑 تبويبات: ${node.tabs.length}`);
+    } else if (node.type === N.UI_TOPBAR) {
+      const props = node.props || {};
+      const text = props.text ? this.eval(props.text, env) : '';
+      const color = props.color ? this.eval(props.color, env) : 'افتراضي';
+      const size = props.size ? this.eval(props.size, env) : 60;
+      this.output(`${pad}  ⬛ شريط علوي: "${text}" [لون: ${color}، حجم: ${size}]`);
     } else if (node.type === N.STATE_DECL) {
       // لو محفوظة: اقرأ من التخزين أولاً
       let value;

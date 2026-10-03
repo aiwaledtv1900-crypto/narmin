@@ -89,6 +89,18 @@ const KEYWORDS = {
   'صلاحية': 'ANDROID_PERMISSION',
   'لون': 'STYLE_SET', 'color': 'STYLE_SET',
   'بلون': 'WITH_COLOR', 'withcolor': 'WITH_COLOR',
+  'الشريط_العلوي': 'UI_TOPBAR', 'topbar': 'UI_TOPBAR',
+  'شريط_علوي': 'UI_TOPBAR',
+  'حجم': 'STYLE_SIZE', 'size': 'STYLE_SIZE',
+  'حواف': 'STYLE_CORNERS',
+  'العرض': 'STYLE_WIDTH',
+  'الطول': 'STYLE_HEIGHT',
+  'نوع': 'STYLE_KIND',
+  'كامل': 'FULL_W',
+  'تلقائي': 'AUTO_W',
+  'مربع': 'SQUARE',
+  'دايري': 'CIRCLE',
+  'بيضاوي': 'OVAL',
 };
 
 // ═══ تطبيع الأحرف الفارسية ═══
