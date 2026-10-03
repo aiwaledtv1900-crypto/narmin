@@ -11,6 +11,8 @@ class NaturalSession {
     this.theme = null;
     this.buttonColor = null;
     this.textColor = null;
+    this.lastFailed = null;    // آخر أمر فاشل
+    this.lastSuggestion = null; // آخر اقتراح
   }
 
   // ═══ 1) تطبيع الحروف ═══
@@ -118,7 +120,8 @@ class NaturalSession {
       return out;
     }
 
-    // ═══ القوالب ═══
+
+  // ═══ القوالب ═══
     const tpl = t.match(/(?:اريد|أريد|انشئ|أنشئ|قالب)\s+(?:تطبيق\s+)?(مهام|مهمات|تسوق|حاسبة|آلة\s+حاسبة|مذكرة|مذكرات|ملاحظات|طقس|الطقس)$/);
     if (tpl) {
       this.applyTemplate(tpl[1]);
@@ -146,7 +149,7 @@ class NaturalSession {
     // ═══ حقل ═══
     m = t.match(/^(?:أضف|اضف|ضع)\s+(?:حقل|إدخال|مدخل|input|field)\s*(.*)$/);
     if (m) {
-      let rest = m[1];
+      let rest = m[1].trim();
       let bind = null;
       // استخرج "كـ X" من النهاية
       const bindM = rest.match(/\s+(?:كـ|ك|as)\s+(\S+)\s*$/);
@@ -154,13 +157,21 @@ class NaturalSession {
         bind = bindM[1].trim();
         rest = rest.replace(/\s+(?:كـ|ك|as)\s+\S+\s*$/, '');
       }
-      const { value, hint } = this.extractArg('أضف حقل ' + rest, 'أضف حقل');
-      const hintText = value || 'أدخل نصاً';
+      // أزل الاقتباسات
+      rest = rest.replace(/^["'«»]+|["'«»]+$/g, '').trim();
+      // ارفض إن كان فارغاً (بدون تلميح)
+      if (!rest) {
+        this.lastFailed = t;
+        const sug = 'أضف حقل "اكتب هنا"';
+        this.lastSuggestion = sug;
+        return `⚠ حقل بدون تلميح\n\n💡 مثال: ${sug}\n   اكتب: تعديل ${sug}`;
+      }
+      const hintText = rest;
       if (bind && !this.stateVars.has(bind)) {
         this.stateVars.set(bind, { type: 'String', init: '""' });
       }
       this.elements.push({ type: 'textfield', hint: hintText, binding: bind });
-      return `✓ حقل: "${hintText}"${bind ? ' ← ' + bind : ''}${hint ? '\n  ' + hint : ''}`;
+      return `✓ حقل: "${hintText}"${bind ? ' ← ' + bind : ''}`;
     }
 
     // ═══ زر ═══
@@ -277,6 +288,46 @@ class NaturalSession {
 
     if (matched) return handled.join('\n');
 
+    // ═══ تعديل: أعد محاولة آخر أمر مع تصحيح ═══
+    m = t.match(/^(?:تعديل|عدّل|عدل|صحّح|صحح)\s+(.+)$/);
+    if (m) {
+      const fix = m[1].trim();
+      if (!this.lastFailed) {
+        return `⚠ لا يوجد أمر فاشل للتعديل. اكتب الأمر أولاً.`;
+      }
+      const old = this.lastFailed;
+      this.lastFailed = null;
+      this.lastSuggestion = null;
+      // أعد التحليل مع الأمر الجديد
+      const retry = this.parseOne(fix);
+      if (typeof retry === 'string') {
+        return `✎ عدّلت "${old}" → "${fix}"\n${retry}`;
+      }
+      return retry;
+    }
+
+    // ═══ نعم: اقبل الاقتراح الأخير ═══
+    if (/^(?:نعم|صح|اجل|موافق|yes|y)$/.test(t)) {
+      if (!this.lastSuggestion) {
+        return `⚠ لا يوجد اقتراح مقبول.`;
+      }
+      const suggestion = this.lastSuggestion;
+      this.lastSuggestion = null;
+      this.lastFailed = null;
+      const retry = this.parseOne(suggestion);
+      if (typeof retry === 'string') {
+        return `✓ نفّذت الاقتراح: ${suggestion}\n${retry}`;
+      }
+      return retry;
+    }
+
+    // ═══ لا: ارفض الاقتراح ═══
+    if (/^(?:لا|خطأ|خطا|no|n)$/.test(t)) {
+      this.lastSuggestion = null;
+      this.lastFailed = null;
+      return `✓ أُلغي`;
+    }
+
     // ═══ اعرض ═══
     if (/^(?:اعرض|عرض|حالة|الكود|ارني|أرني|what)$/.test(t)) {
       return this.renderState();
@@ -316,11 +367,28 @@ class NaturalSession {
       return this.renderHelp();
     }
 
+    // اقترح حلاً
+    const suggestion = this.suggestFix(t);
+    this.lastFailed = t;
+    if (suggestion) {
+      this.lastSuggestion = suggestion;
+      return `⚠ لم أفهم: "${t}"\n\n💡 الأقرب: ${suggestion}\n   اكتب: تعديل ${suggestion}\n   أو: نعم (لقبول الاقتراح)`;
+    }
+    this.lastSuggestion = null;
     return `⚠ لم أفهم: "${t}"\n   اكتب "مساعدة" للأوامر المتاحة`;
   }
 
   // ═══ 5) parse يدعم أوامر متعددة ═══
   parse(text) {
+    // افحص إن كان "تعديل X" — لا تقسّم
+    const trimmed = String(text).trim();
+    if (/^(?:تعديل|عدّل|عدل|صحّح|صحح)\s+/.test(trimmed)) {
+      return this.parseOne(trimmed);
+    }
+    // افحص "نعم" و"لا" أيضاً — لا تقسّم
+    if (/^(?:نعم|صح|اجل|موافق|yes|y|لا|خطأ|خطا|no|n)$/.test(trimmed)) {
+      return this.parseOne(trimmed);
+    }
     const parts = this.splitCommands(text);
     const results = [];
     let buildAction = null;
@@ -345,6 +413,68 @@ class NaturalSession {
   }
 
   // ═══ القوالب ═══
+
+    // ═══ اقتراح ذكي بالأقرب ═══
+  suggestFix(input) {
+    const t = String(input).trim();
+    
+    // بنك الأوامر الصحيحة
+    const cmds = [
+      'انشئ تطبيق "اسم"',
+      'أضف عنوان "نص"',
+      'أضف كتابة "نص"',
+      'أضف حقل "تلميح"',
+      'أضف حقل "تلميح" كـ متغير',
+      'أضف زر "نص" عند_الضغط',
+      'أضف قائمة اسم_القائمة',
+      'أضف اختيار "نص"',
+      'أضف مفتاح "نص"',
+      'أضف مسافة 16',
+      'أضف فاصل',
+      'الشريط_العلوي ( لون "..." حجم 70 نص "..." )',
+      'واجهه "لون"',
+      'ازرار "لون"',
+      'نص "لون"',
+      'حالة اسم = قيمة',
+      'محفوظ اسم = قيمة',
+      'اعرض',
+      'شغّل',
+      'ابنِ',
+      'تراجع',
+      'امسح الكل',
+      'مساعدة',
+      'خروج',
+    ];
+    
+    // احسب المسافة
+    function lev(a, b) {
+      const m = a.length, n = b.length;
+      const dp = Array.from({ length: m+1 }, () => new Array(n+1).fill(0));
+      for (let i = 0; i <= m; i++) dp[i][0] = i;
+      for (let j = 0; j <= n; j++) dp[0][j] = j;
+      for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+          if (a[i-1] === b[j-1]) dp[i][j] = dp[i-1][j-1];
+          else dp[i][j] = 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+        }
+      }
+      return dp[m][n];
+    }
+    
+    // اقترح الأقرب
+    let best = null, bestScore = Infinity;
+    for (const cmd of cmds) {
+      const score = lev(t, cmd);
+      if (score < bestScore) { bestScore = score; best = cmd; }
+    }
+    
+    // اقترح فقط إن كان قريباً
+    if (bestScore <= 5 || bestScore < t.length) {
+      return best;
+    }
+    return null;
+  }
+
   applyTemplate(kind) {
     if (kind === 'مهام' || kind === 'مهمات') {
       this.appName = 'مهامي';
