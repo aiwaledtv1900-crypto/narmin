@@ -1,6 +1,6 @@
 'use strict';
 
-const { NodeType: N } = require('../ast/nodes');
+const { NodeType: N, AST } = require('../ast/nodes');
 const { Environment } = require('./environment');
 const {
   stringify, isTruthy, equals, typeName,
@@ -54,12 +54,82 @@ class Interpreter {
       return result;
     }));
 
+    // يبدأ_بـ
+    this.global.defineLocal('يبدأ_بـ', makeNative('يبدأ_بـ', (args) => {
+      const [s, prefix] = args;
+      return String(s).startsWith(String(prefix));
+    }));
+
+    // استبعد: يزيل العناصر التي تحقّق شرطاً (دالة)
+    this.global.defineLocal('استبعد', makeNative('استبعد', (args) => {
+      const [arr, predicate] = args;
+      if (!Array.isArray(arr)) throw new Error('استبعد() يتوقع مصفوفة');
+      const self = this;
+      const toRemove = arr.filter((v) => isTruthy(self.callFn(predicate, [v])));
+      for (const item of toRemove) {
+        const idx = arr.indexOf(item);
+        if (idx >= 0) arr.splice(idx, 1);
+      }
+      return arr;
+    }));
+
+    // احذف_من
+    this.global.defineLocal('احذف_من', makeNative('احذف_من', (args) => {
+      const [arr, item] = args;
+      if (!Array.isArray(arr)) throw new Error('احذف_من() يتوقع مصفوفة');
+      const idx = arr.indexOf(item);
+      if (idx >= 0) arr.splice(idx, 1);
+      return arr;
+    }));
+
+    // تنسيق الأرقام
+    this.global.defineLocal('نسّق', makeNative('نسّق', (args) => {
+      const n = args[0];
+      if (typeof n !== 'number') return String(n);
+      if (Number.isInteger(n)) return String(n);
+      // للأرقام العشرية: حتى 6 منازل مع إزالة الأصفار
+      return n.toFixed(6).replace(/\.?0+$/, '');
+    }));
+
     // دوال المصفوفات
     this.global.defineLocal('أضف', makeNative('أضف', (args) => {
       const [arr, v] = args;
       if (!Array.isArray(arr)) throw new Error('أضف() يتوقع مصفوفة');
       arr.push(v);
       return arr;
+    }));
+
+    // تخزين محلي (JSON file)
+    const storagePath = path.join(os.homedir(), '.narmin_storage.json');
+    this.storagePath = storagePath;
+    this._storage = {};
+    if (fs.existsSync(storagePath)) {
+      try { this._storage = JSON.parse(fs.readFileSync(storagePath, 'utf8')); }
+      catch (_) { this._storage = {}; }
+    }
+    const saveStorage = () => {
+      try {
+        fs.writeFileSync(this.storagePath, JSON.stringify(this._storage, null, 2), 'utf8');
+      } catch (_) {}
+    };
+    this._saveStorage = saveStorage;
+
+    this.global.defineLocal('خزّن', makeNative('خزّن', (args) => {
+      this._storage[String(args[0])] = args[1];
+      this._saveStorage();
+      return true;
+    }));
+
+    this.global.defineLocal('اقرأ_مخزناً', makeNative('اقرأ_مخزناً', (args) => {
+      const key = String(args[0]);
+      if (key in this._storage) return this._storage[key];
+      return args.length > 1 ? args[1] : null;
+    }));
+
+    this.global.defineLocal('امسح_مخزناً', makeNative('امسح_مخزناً', () => {
+      this._storage = {};
+      this._saveStorage();
+      return true;
     }));
 
     // وحدة Termux
@@ -69,6 +139,10 @@ class Interpreter {
     // وحدة APK
     const apk = require('../stdlib/apk');
     apk.install(this.global);
+
+    // وحدة Android
+    const android = require('../stdlib/android');
+    android.install(this.global);
   }
 
   run(program) {
@@ -94,8 +168,115 @@ class Interpreter {
       case N.CONTINUE: throw new ContinueSignal();
       case N.BLOCK: return this.execBlock(node, env);
       case N.PROGRAM: return this.run(node);
+
+      // عقد تُعالَج في Codegen — لا في التنفيذ
+      case N.STATE_DECL:
+      case N.KOTLIN_RAW:
+      case N.KOTLIN_IMPORT:
+      case N.GRADLE_DEP:
+      case N.ANDROID_PERMISSION:
+      case N.NAVIGATE:
+      case N.TOAST:
+      case N.ALERT:
+      case N.BACK:
+      case N.UI_LIST:
+      case N.REMOVE_FROM:
+      case N.UI_DONE:
+        return;
+
+      // عقد واجهات أندرويد — تُعالَج في Codegen، لا في التنفيذ
+      case N.SCREEN: return this.execScreen(node, env);
+      case N.UI_HEADING:
+      case N.UI_TEXT:
+      case N.UI_BUTTON:
+      case N.UI_CARD:
+        return; // لا تفعل شيئاً — للـ codegen فقط
       default:
         throw new NarminError(`عقدة غير معروفة: ${node.type}`);
+    }
+  }
+
+  execScreen(node, env) {
+    // عند التنفيذ المباشر: اطبع ملخص الشاشة
+    this.output(`[شاشة: ${node.name}]`);
+    for (const child of node.children) {
+      this.execScreenElement(child, env, 1);
+    }
+  }
+
+  execScreenElement(node, env, depth) {
+    const pad = '  '.repeat(depth);
+    if (node.type === N.UI_HEADING) {
+      this.output(`${pad}▸ عنوان: ${stringify(this.eval(node.text, env))}`);
+    } else if (node.type === N.UI_TEXT) {
+      this.output(`${pad}  كتابة: ${stringify(this.eval(node.expr, env))}`);
+    } else if (node.type === N.UI_BUTTON) {
+      this.output(`${pad}  🔘 زر: ${stringify(this.eval(node.text, env))}`);
+    } else if (node.type === N.UI_TEXTFIELD) {
+      this.output(`${pad}  ✏️  حقل: ${stringify(this.eval(node.hint, env))}`);
+    } else if (node.type === N.UI_IMAGE) {
+      this.output(`${pad}  🖼  صورة: ${stringify(this.eval(node.name, env))}`);
+    } else if (node.type === N.UI_CHECKBOX) {
+      this.output(`${pad}  ☑ اختيار: ${stringify(this.eval(node.text, env))}`);
+    } else if (node.type === N.UI_SWITCH) {
+      this.output(`${pad}  ⚙ مفتاح: ${stringify(this.eval(node.text, env))}`);
+    } else if (node.type === N.UI_PROGRESS) {
+      this.output(`${pad}  📊 تقدم: ${stringify(this.eval(node.value, env))}`);
+    } else if (node.type === N.UI_SPACER) {
+      const s = node.size ? stringify(this.eval(node.size, env)) : 'افتراضي';
+      this.output(`${pad}  ▭ مسافة: ${s}`);
+    } else if (node.type === N.UI_DIVIDER) {
+      this.output(`${pad}  ─ فاصل`);
+    } else if (node.type === N.UI_CARD) {
+      this.output(`${pad}  ┌ بطاقة: ${stringify(this.eval(node.title, env))}`);
+      for (const child of node.children) {
+        this.execScreenElement(child, env, depth + 2);
+      }
+      this.output(`${pad}  └`);
+    } else if (node.type === N.UI_ROW) {
+      this.output(`${pad}  ▶ صف:`);
+      for (const child of node.children) {
+        this.execScreenElement(child, env, depth + 2);
+      }
+    } else if (node.type === N.KOTLIN_RAW) {
+      this.output(`${pad}  ⚡ كوتلن: ${node.code.slice(0, 40)}`);
+    } else if (node.type === N.NAVIGATE) {
+      this.output(`${pad}  → انتقل إلى: ${node.target}`);
+    } else if (node.type === N.TOAST) {
+      this.output(`${pad}  💬 تنبيه: ${this.eval(node.text, env)}`);
+    } else if (node.type === N.ALERT) {
+      this.output(`${pad}  ⚠ حوار: ${this.eval(node.title, env)}`);
+    } else if (node.type === N.BACK) {
+      this.output(`${pad}  ← رجوع`);
+    } else if (node.type === N.UI_LIST) {
+      const list = env.get(node.source);
+      if (Array.isArray(list)) {
+        this.output(`${pad}  📋 قائمة "${node.source}" (${list.length} عنصر):`);
+        if (list.length > 0) {
+          const itemEnv = env.child();
+          itemEnv.defineLocal('العنصر', list[0]);
+          this.output(`${pad}    ${'─'.repeat(30)}`);
+          for (const child of node.template) {
+            this.execScreenElement(child, itemEnv, depth + 2);
+          }
+        }
+      }
+    } else if (node.type === N.STATE_DECL) {
+      // لو محفوظة: اقرأ من التخزين أولاً
+      let value;
+      if (node.persistent) {
+        const stored = this._storage[node.name];
+        value = (stored !== undefined) ? stored : this.eval(node.init, env);
+      } else {
+        value = this.eval(node.init, env);
+      }
+      env.defineLocal(node.name, value);
+      if (node.persistent) {
+        if (!this._persistentVars) this._persistentVars = new Set();
+        this._persistentVars.add(node.name);
+      }
+      const tag = node.persistent ? '💾 محفوظ' : '📦 حالة';
+      this.output(`${pad}  ${tag}: ${node.name} = ${stringify(value)}`);
     }
   }
 
@@ -115,6 +296,11 @@ class Interpreter {
 
     if (target.type === N.IDENTIFIER) {
       env.set(target.name, value);
+      // لو الحالة محفوظة — خزّن تلقائياً
+      if (this._persistentVars && this._persistentVars.has(target.name)) {
+        this._storage[target.name] = value;
+        this._saveStorage();
+      }
       return value;
     }
 
@@ -437,6 +623,9 @@ class Interpreter {
   }
 }
 
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { parse } = require('../parser/parser');
 
 function run(source, options = {}) {

@@ -27,6 +27,24 @@ function showHelp() {
   console.log('  narmin run --code "اطبع 2 + 3"');
 }
 
+// اختصار: narm file.narm == narmin run file.narm
+if (cmd && cmd.endsWith('.narm')) {
+  const { run } = require('./interpreter/interpreter');
+  const fs = require('fs');
+  const file = require('path').resolve(cmd);
+  if (!fs.existsSync(file)) {
+    console.error(`خطأ: الملف غير موجود: ${file}`);
+    process.exit(1);
+  }
+  try {
+    run(fs.readFileSync(file, 'utf8'), { output: (t) => console.log(t) });
+  } catch (e) {
+    console.error(`خطأ: ${e.message}`);
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
 if (!cmd || cmd === 'repl') {
   const { startRepl } = require('./repl');
   startRepl();

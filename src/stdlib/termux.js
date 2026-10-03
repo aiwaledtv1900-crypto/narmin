@@ -23,13 +23,19 @@ function execSync(cmd, args = [], options = {}) {
       maxBuffer: 10 * 1024 * 1024,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    // اطبع الناتج مباشرة
+    if (stdout) process.stdout.write(stdout);
     return { نجح: true, كود: 0, خرج: stdout.trimEnd(), خطأ: '' };
   } catch (e) {
+    const stdout = (e.stdout || '').toString();
+    const stderr = (e.stderr || e.message || '').toString();
+    if (stdout) process.stdout.write(stdout);
+    if (stderr) process.stderr.write(stderr);
     return {
       نجح: false,
       كود: e.status || 1,
-      خرج: (e.stdout || '').toString().trimEnd(),
-      خطأ: (e.stderr || e.message || '').toString().trimEnd(),
+      خرج: stdout.trimEnd(),
+      خطأ: stderr.trimEnd(),
     };
   }
 }

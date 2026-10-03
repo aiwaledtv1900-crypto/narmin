@@ -2,6 +2,18 @@
 
 const NodeType = {
   PROGRAM: 'Program',
+  KOTLIN_RAW: 'KotlinRaw',
+  UI_LIST: 'UIList',
+  UI_DONE: 'UIDone',
+  REMOVE_FROM: 'RemoveFrom',
+  KOTLIN_IMPORT: 'KotlinImport',
+  GRADLE_DEP: 'GradleDep',
+  ANDROID_PERMISSION: 'AndroidPermission',
+  STATE_DECL: 'StateDecl',
+  NAVIGATE: 'Navigate',
+  TOAST: 'Toast',
+  ALERT: 'Alert',
+  BACK: 'Back',
 
   // التعابير
   NUMBER: 'NumberLiteral',
@@ -35,10 +47,47 @@ const NodeType = {
   CONTINUE: 'ContinueStmt',
   IMPORT: 'ImportStmt',
   BLOCK: 'Block',
+
+  // واجهات أندرويد
+  SCREEN: 'Screen',
+  UI_HEADING: 'UIHeading',
+  UI_TEXT: 'UIText',
+  UI_BUTTON: 'UIButton',
+  UI_CARD: 'UICard',
+  UI_TEXTFIELD: 'UITextField',
+  UI_IMAGE: 'UIImage',
+  UI_CHECKBOX: 'UICheckBox',
+  UI_SWITCH: 'UISwitch',
+  UI_PROGRESS: 'UIProgress',
+  UI_ROW: 'UIRow',
+  UI_SPACER: 'UISpacer',
+  UI_DIVIDER: 'UIDivider',
 };
 
 const AST = {
   Program: (body) => ({ type: NodeType.PROGRAM, body }),
+  UICard: (title, children) => ({ type: NodeType.UI_CARD, title, children }),
+  UITextField: (hint) => ({ type: NodeType.UI_TEXTFIELD, hint }),
+  UIImage: (name) => ({ type: NodeType.UI_IMAGE, name }),
+  UICheckBox: (text) => ({ type: NodeType.UI_CHECKBOX, text }),
+  UISwitch: (text) => ({ type: NodeType.UI_SWITCH, text }),
+  UIProgress: (value) => ({ type: NodeType.UI_PROGRESS, value }),
+  UIRow: (children) => ({ type: NodeType.UI_ROW, children }),
+  UISpacer: (size) => ({ type: NodeType.UI_SPACER, size }),
+  UIDivider: () => ({ type: NodeType.UI_DIVIDER }),
+  KotlinRaw: (code) => ({ type: NodeType.KOTLIN_RAW, code }),
+  UIList: (source, template) => ({ type: NodeType.UI_LIST, source, template }),
+  UIDone: () => ({ type: NodeType.UI_DONE }),
+  RemoveFrom: (list, item) => ({ type: NodeType.REMOVE_FROM, list, item }),
+  KotlinImport: (path) => ({ type: NodeType.KOTLIN_IMPORT, path }),
+  GradleDep: (spec) => ({ type: NodeType.GRADLE_DEP, spec }),
+  AndroidPermission: (name) => ({ type: NodeType.ANDROID_PERMISSION, name }),
+  StateDecl: (name, init, persistent = false) => ({ type: NodeType.STATE_DECL, name, init, persistent }),
+  Navigate: (target) => ({ type: NodeType.NAVIGATE, target }),
+  Toast: (text) => ({ type: NodeType.TOAST, text }),
+  Alert: (title, message, handler) => ({ type: NodeType.ALERT, title, message, handler }),
+  Back: () => ({ type: NodeType.BACK }),
+  UITextField: (hint, binding) => ({ type: NodeType.UI_TEXTFIELD, hint, binding }),
 
   Number: (value) => ({ type: NodeType.NUMBER, value }),
   String: (value) => ({ type: NodeType.STRING, value }),
@@ -71,6 +120,13 @@ const AST = {
   Continue: () => ({ type: NodeType.CONTINUE }),
   Import: (names, from, alias) => ({ type: NodeType.IMPORT, names, from, alias }),
   Block: (body) => ({ type: NodeType.BLOCK, body }),
+
+  // واجهات
+  Screen: (name, children) => ({ type: NodeType.SCREEN, name, children }),
+  UIHeading: (text) => ({ type: NodeType.UI_HEADING, text }),
+  UIText: (expr) => ({ type: NodeType.UI_TEXT, expr }),
+  UIButton: (text, handler) => ({ type: NodeType.UI_BUTTON, text, handler }),
+  UICard: (title, children) => ({ type: NodeType.UI_CARD, title, children }),
 };
 
 module.exports = { NodeType, AST };

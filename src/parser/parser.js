@@ -67,6 +67,46 @@ class Parser {
     if (this.checkKw('WHILE')) return this.parseWhile();
     if (this.checkKw('FOR')) return this.parseFor();
     if (this.checkKw('FUNCTION')) return this.parseFunction();
+    if (this.checkKw('SCREEN')) return this.parseScreen();
+    if (this.checkKw('KOTLIN_IMPORT')) {
+      this.advance();
+      return AST.KotlinImport(this.expect(T.STRING, 'متوقع مسار import').value);
+    }
+    if (this.checkKw('GRADLE_DEP')) {
+      this.advance();
+      return AST.GradleDep(this.expect(T.STRING, 'متوقع مواصفة مكتبة').value);
+    }
+    if (this.checkKw('ANDROID_PERMISSION')) {
+      this.advance();
+      return AST.AndroidPermission(this.expect(T.STRING, 'متوقع اسم الصلاحية').value);
+    }
+    if (this.checkKw('KOTLIN_RAW')) {
+      this.advance();
+      return AST.KotlinRaw(this.expect(T.STRING, 'متوقع كود Kotlin').value);
+    }
+    if (this.checkKw('NAVIGATE')) {
+      this.advance();
+      return AST.Navigate(this.expect(T.STRING, 'متوقع اسم الشاشة').value);
+    }
+    if (this.checkKw('TOAST')) {
+      this.advance();
+      return AST.Toast(this.parseExpression());
+    }
+    if (this.checkKw('ALERT')) {
+      this.advance();
+      const title = this.parseExpression();
+      const message = this.parseExpression();
+      let handler = null;
+      if (this.checkKw('ON_CLICK')) {
+        this.advance();
+        handler = this.parseBlock();
+      }
+      return AST.Alert(title, message, handler);
+    }
+    if (this.checkKw('BACK')) {
+      this.advance();
+      return AST.Back();
+    }
     if (this.checkKw('RETURN')) return this.parseReturn();
     if (this.checkKw('BREAK')) { this.advance(); return AST.Break(); }
     if (this.checkKw('CONTINUE')) { this.advance(); return AST.Continue(); }
@@ -139,10 +179,13 @@ class Parser {
     this.advance();
     const name = this.expect(T.IDENT, 'متوقع اسم الدالة').value;
     this.expect(T.LPAREN, "متوقع '('");
+    this.skipNewlines();
     const params = [];
     while (!this.check(T.RPAREN) && !this.check(T.EOF)) {
       params.push(this.expect(T.IDENT, 'متوقع اسم معامل').value);
+      this.skipNewlines();
       if (!this.match(T.COMMA)) break;
+      this.skipNewlines();
     }
     this.expect(T.RPAREN, "متوقع ')'");
     const body = this.parseBlock();
@@ -156,6 +199,177 @@ class Parser {
       arg = this.parseExpression();
     }
     return AST.Return(arg);
+  }
+
+  // ═══ واجهات أندرويد ═══
+  parseScreen() {
+    this.advance(); // شاشة
+    const name = this.expect(T.STRING, 'متوقع اسم الشاشة').value;
+    this.expect(T.LBRACE, "متوقع '{'");
+    const children = [];
+    this.skipNewlines();
+    while (!this.check(T.RBRACE) && !this.check(T.EOF)) {
+      if (this.checkKw('STATE') || this.checkKw('SAVED_STATE')) {
+        children.push(this.parseStateDecl());
+      } else {
+        children.push(this.parseUIElement());
+      }
+      this.skipNewlines();
+    }
+    this.expect(T.RBRACE, "متوقع '}'");
+    return AST.Screen(name, children);
+  }
+
+  parseUIElement() {
+    if (this.checkKw('HEADING')) {
+      this.advance();
+      return AST.UIHeading(this.parseExpression());
+    }
+    if (this.checkKw('UI_TEXT')) {
+      this.advance();
+      return AST.UIText(this.parseExpression());
+    }
+    if (this.checkKw('UI_BUTTON')) {
+      this.advance();
+      const text = this.parseExpression();
+      this.expectKw('ON_CLICK', "متوقع 'عند_الضغط' بعد نص الزر");
+      const handler = this.parseBlock();
+      return AST.UIButton(text, handler);
+    }
+    if (this.checkKw('UI_CARD')) {
+      this.advance();
+      const title = this.parseExpression();
+      this.expect(T.LBRACE, "متوقع '{'");
+      const children = [];
+      this.skipNewlines();
+      while (!this.check(T.RBRACE) && !this.check(T.EOF)) {
+        children.push(this.parseUIElement());
+        this.skipNewlines();
+      }
+      this.expect(T.RBRACE, "متوقع '}'");
+      return AST.UICard(title, children);
+    }
+    if (this.checkKw('UI_TEXTFIELD')) {
+      this.advance();
+      const hint = this.parseExpression();
+      let binding = null;
+      if (this.checkKw('AS')) {
+        this.advance();
+        binding = this.expect(T.IDENT, 'متوقع اسم المتغير').value;
+      }
+      return AST.UITextField(hint, binding);
+    }
+    if (this.checkKw('UI_IMAGE')) {
+      this.advance();
+      return AST.UIImage(this.parseExpression());
+    }
+    if (this.checkKw('UI_CHECKBOX')) {
+      this.advance();
+      return AST.UICheckBox(this.parseExpression());
+    }
+    if (this.checkKw('UI_SWITCH')) {
+      this.advance();
+      return AST.UISwitch(this.parseExpression());
+    }
+    if (this.checkKw('UI_PROGRESS')) {
+      this.advance();
+      return AST.UIProgress(this.parseExpression());
+    }
+    if (this.checkKw('UI_ROW')) {
+      this.advance();
+      this.expect(T.LBRACE, "متوقع '{'");
+      const children = [];
+      this.skipNewlines();
+      while (!this.check(T.RBRACE) && !this.check(T.EOF)) {
+        children.push(this.parseUIElement());
+        this.skipNewlines();
+      }
+      this.expect(T.RBRACE, "متوقع '}'");
+      return AST.UIRow(children);
+    }
+    if (this.checkKw('UI_SPACER')) {
+      this.advance();
+      let size = null;
+      if (!this.check(T.NEWLINE) && !this.check(T.RBRACE) && !this.check(T.SEMICOLON) && !this.check(T.EOF)) {
+        size = this.parseExpression();
+      }
+      return AST.UISpacer(size);
+    }
+    if (this.checkKw('UI_DIVIDER')) {
+      this.advance();
+      return AST.UIDivider();
+    }
+    if (this.checkKw('KOTLIN_RAW')) {
+      this.advance();
+      return AST.KotlinRaw(this.expect(T.STRING, 'متوقع كود Kotlin').value);
+    }
+    if (this.checkKw('NAVIGATE')) {
+      this.advance();
+      return AST.Navigate(this.expect(T.STRING, 'متوقع اسم الشاشة').value);
+    }
+    if (this.checkKw('TOAST')) {
+      this.advance();
+      return AST.Toast(this.parseExpression());
+    }
+    if (this.checkKw('ALERT')) {
+      this.advance();
+      const title = this.parseExpression();
+      const message = this.parseExpression();
+      let handler = null;
+      if (this.checkKw('ON_CLICK')) {
+        this.advance();
+        handler = this.parseBlock();
+      }
+      return AST.Alert(title, message, handler);
+    }
+    if (this.checkKw('BACK')) {
+      this.advance();
+      return AST.Back();
+    }
+    if (this.checkKw('UI_DONE')) {
+      this.advance();
+      return AST.UIDone();
+    }
+    if (this.checkKw('UI_LIST')) {
+      this.advance();
+      const source = this.expect(T.IDENT, 'متوقع اسم المصفوفة').value;
+      this.expect(T.LBRACE, "متوقع '{'");
+      const template = [];
+      this.skipNewlines();
+      while (!this.check(T.RBRACE) && !this.check(T.EOF)) {
+        template.push(this.parseUIElement());
+        this.skipNewlines();
+      }
+      this.expect(T.RBRACE, "متوقع '}'");
+      return AST.UIList(source, template);
+    }
+    this.error('متوقع عنصر واجهة');
+  }
+
+  // دالة كتعبير (lambda)
+  parseFunctionExpr() {
+    this.advance(); // دالة
+    this.expect(T.LPAREN, "متوقع '('");
+    this.skipNewlines();
+    const params = [];
+    while (!this.check(T.RPAREN) && !this.check(T.EOF)) {
+      params.push(this.expect(T.IDENT, 'متوقع اسم معامل').value);
+      this.skipNewlines();
+      if (!this.match(T.COMMA)) break;
+      this.skipNewlines();
+    }
+    this.expect(T.RPAREN, "متوقع ')'");
+    const body = this.parseBlock();
+    return AST.Function('', params, body);
+  }
+
+  parseStateDecl() {
+    const isSaved = this.checkKw('SAVED_STATE');
+    this.advance(); // حالة / محفوظ
+    const name = this.expect(T.IDENT, 'متوقع اسم الحالة').value;
+    this.expect(T.ASSIGN, "متوقع '=' بعد اسم الحالة");
+    const init = this.parseExpression();
+    return AST.StateDecl(name, init, isSaved);
   }
 
   parseBlock() {
@@ -258,17 +472,29 @@ class Parser {
     while (true) {
       if (this.check(T.LPAREN)) {
         this.advance();
+        this.skipNewlines();
         const args = [];
         while (!this.check(T.RPAREN) && !this.check(T.EOF)) {
           args.push(this.parseExpression());
+          this.skipNewlines();
           if (!this.match(T.COMMA)) break;
+          this.skipNewlines();
         }
         this.expect(T.RPAREN, "متوقع ')'");
         expr = AST.Call(expr, args);
       } else if (this.check(T.DOT)) {
         this.advance();
-        const prop = this.expect(T.IDENT, 'متوقع اسم خاصية بعد النقطة').value;
-        expr = AST.Member(expr, prop);
+        const tok = this.current();
+        // اسمح للكلمات المفتاحية كأسماء خصائص بعد النقطة
+        if (tok.type === T.IDENT) {
+          this.advance();
+          expr = AST.Member(expr, tok.value);
+        } else if (tok.type === T.KEYWORD) {
+          this.advance();
+          expr = AST.Member(expr, tok.value);
+        } else {
+          this.error('متوقع اسم خاصية بعد النقطة');
+        }
       } else if (this.check(T.LBRACKET)) {
         this.advance();
         const idx = this.parseExpression();
@@ -290,6 +516,10 @@ class Parser {
       if (tok.canonical === 'TRUE') { this.advance(); return AST.Boolean(true); }
       if (tok.canonical === 'FALSE') { this.advance(); return AST.Boolean(false); }
       if (tok.canonical === 'NULL') { this.advance(); return AST.Null(); }
+      // العنصر → معرّف خاص داخل القوائم
+      if (tok.canonical === 'ITEM') { this.advance(); return AST.Identifier('العنصر'); }
+      // احذف_من → استدعاء دالة عادي
+      if (tok.canonical === 'REMOVE_FROM') { this.advance(); return AST.Identifier('احذف_من'); }
     }
 
     if (this.match(T.LPAREN)) {
@@ -298,6 +528,7 @@ class Parser {
       return expr;
     }
 
+    if (this.checkKw('FUNCTION')) return this.parseFunctionExpr();
     if (this.check(T.LBRACKET)) return this.parseArray();
     if (this.check(T.LBRACE)) return this.parseObject();
     if (this.checkKw('IF')) return this.parseIfExpr();

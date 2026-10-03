@@ -1,0 +1,956 @@
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const { NodeType: N } = require('../ast/nodes');
+
+const BUILD_MAP = {
+  'إصدار': 'Build.VERSION.RELEASE',
+  'رقم': 'Build.VERSION.SDK_INT.toString()',
+  'موديل': 'Build.MODEL',
+  'مصنّع': 'Build.MANUFACTURER',
+  'علامة': 'Build.BRAND',
+};
+
+function escapeKotlin(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+}
+function escapeXml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
+// ═══ جمع الحالة ═══
+function collectState(children, state = new Map()) {
+  for (const child of children) {
+    if (child.type === N.STATE_DECL) {
+      let type = 'String', init = '""', isList = false;
+      if (child.init.type === N.NUMBER) {
+        type = 'Double';
+        init = String(child.init.value) + '.0';
+      } else if (child.init.type === N.STRING) {
+        type = 'String';
+        init = '"' + child.init.value.replace(/"/g, '\\"') + '"';
+      } else if (child.init.type === N.BOOLEAN) {
+        type = 'Boolean';
+        init = child.init.value ? 'true' : 'false';
+      } else if (child.init.type === N.ARRAY) {
+        type = 'MutableList<String>';
+        isList = true;
+        const elems = child.init.elements.map((e) =>
+          e.type === N.STRING ? '"' + e.value.replace(/"/g, '\\"') + '"' :
+          e.type === N.NUMBER ? String(e.value) : '""'
+        ).join(', ');
+        init = `mutableListOf(${elems})`;
+      }
+      state.set(child.name, { type, init, persistent: !!child.persistent, isList });
+    }
+    if (child.type === N.UI_TEXTFIELD && child.binding) {
+      if (!state.has(child.binding)) {
+        state.set(child.binding, { type: 'String', init: '""', persistent: false });
+      }
+    }
+    if (child.children) collectState(child.children, state);
+  }
+  return state;
+}
+
+function hasStateRef(node, stateVars) {
+  if (!node) return false;
+  if (node.type === N.IDENTIFIER) return stateVars.has(node.name);
+  if (node.type === N.BINARY) return hasStateRef(node.left, stateVars) || hasStateRef(node.right, stateVars);
+  if (node.type === N.CALL) return node.args.some((a) => hasStateRef(a, stateVars));
+  if (node.type === N.MEMBER) return hasStateRef(node.object, stateVars);
+  return false;
+}
+
+// ═══ تعبير → Kotlin (مع وعي بالحالة) ═══
+function exprToKotlin(node, stateVars) {
+  if (!node) return '""';
+  switch (node.type) {
+    case N.STRING: return '"' + escapeKotlin(node.value) + '"';
+    case N.NUMBER: return String(node.value);
+    case N.BOOLEAN: return node.value ? 'true' : 'false';
+    case N.NULL: return 'null';
+    case N.IDENTIFIER:
+      if (stateVars && stateVars.has(node.name)) return 'STATE_' + node.name;
+      return node.name;
+    case N.BINARY: {
+      const L = exprToKotlin(node.left, stateVars);
+      const R = exprToKotlin(node.right, stateVars);
+      return `(${L} ${node.op} ${R})`;
+    }
+    case N.MEMBER: {
+      const obj = node.object;
+      if (obj.type === N.IDENTIFIER && obj.name === 'build') {
+        return BUILD_MAP[node.property] || `Build.${node.property}`;
+      }
+      return `${exprToKotlin(obj, stateVars)}.${node.property}`;
+    }
+    case N.CALL: {
+      if (node.callee.type === N.IDENTIFIER && node.callee.name === 'نص') {
+        return `(${exprToKotlin(node.args[0], stateVars)}).toString()`;
+      }
+      if (node.callee.type === N.IDENTIFIER && node.callee.name === 'نسّق') {
+        return `formatNumber(${exprToKotlin(node.args[0], stateVars)})`;
+      }
+if (node.callee.name === 'طول') {
+          return `${exprToKotlin(node.args[0], stateVars)}.size`;
+        }
+        if (node.callee.name === 'استبعد') {
+          const list = exprToKotlin(node.args[0], stateVars);
+          const pred = node.args[1];
+          if (pred && pred.type === N.FUNCTION) {
+            const param = pred.params[0] || 'س';
+            const body = pred.body.body;
+            if (body.length > 0 && body[0].type === N.RETURN) {
+              const ret = body[0].arg;
+              if (ret && ret.type === N.CALL && ret.callee.name === 'يبدأ_بـ') {
+                const inner = exprToKotlin(ret.args[0], stateVars);
+                const prefix = exprToKotlin(ret.args[1], stateVars);
+                return `${list}.removeAll { ${param} -> ${inner}.startsWith(${prefix}) }`;
+              }
+            }
+          }
+          return `${list}`;
+        }
+        if (node.callee.name === 'يبدأ_بـ') {
+          return `${exprToKotlin(node.args[0], stateVars)}.startsWith(${exprToKotlin(node.args[1], stateVars)})`;
+        }
+              if (node.callee.type === N.IDENTIFIER && node.callee.name === 'أضف') {
+        return `${exprToKotlin(node.args[0], stateVars)}.add(${exprToKotlin(node.args[1], stateVars)})`;
+      }
+      if (node.callee.type === N.IDENTIFIER && node.callee.name === 'احذف_من') {
+        return `${exprToKotlin(node.args[0], stateVars)}.remove(${exprToKotlin(node.args[1], stateVars)})`;
+      }
+      const args = node.args.map((a) => exprToKotlin(a, stateVars)).join(', ');
+      return `${exprToKotlin(node.callee, stateVars)}(${args})`;
+    }
+    case N.IF_EXPR: {
+      const test = exprToKotlin(node.test, stateVars);
+      const cons = node.consequent.body.length
+        ? exprToKotlin(node.consequent.body[node.consequent.body.length - 1].expr, stateVars)
+        : '""';
+      const alt = node.alternate && node.alternate.body.length
+        ? exprToKotlin(node.alternate.body[node.alternate.body.length - 1].expr, stateVars)
+        : '""';
+      return `(if (${test}) ${cons} else ${alt})`;
+    }
+    default: return `"" /* ${node.type} */`;
+  }
+}
+
+function staticString(node) {
+  if (!node) return '';
+  if (node.type === N.STRING) return node.value;
+  if (node.type === N.NUMBER) return String(node.value);
+  if (node.type === N.BOOLEAN) return node.value ? 'true' : 'false';
+  if (node.type === N.BINARY && node.op === '+') {
+    return staticString(node.left) + staticString(node.right);
+  }
+  return '';
+}
+
+// ═══ معالج الحدث ═══
+function handlerToKotlin(block, indent, stateVars) {
+  const lines = [];
+  for (const stmt of block.body) {
+    if (stmt.type === N.KOTLIN_RAW) {
+      lines.push(`${indent}${stmt.code}`);
+    } else if (stmt.type === N.PRINT) {
+      lines.push(`${indent}android.util.Log.d("narmin", ${exprToKotlin(stmt.arg, stateVars)})`);
+    } else if (stmt.type === N.ASSIGN) {
+      if (stmt.target.type === N.IDENTIFIER && stateVars.has(stmt.target.name)) {
+        const info = stateVars.get(stmt.target.name);
+        const t = info.type;
+        let value = exprToKotlin(stmt.value, stateVars);
+        if (t === 'Double') value = `(${value}).toDouble()`;
+        else if (t === 'String') value = `(${value}).toString()`;
+        else if (t === 'Boolean') value = `(${value}) as Boolean`;
+        lines.push(`${indent}STATE_${stmt.target.name} = ${value}`);
+        if (info.persistent) {
+          lines.push(`${indent}savePref("${stmt.target.name}", STATE_${stmt.target.name})`);
+        }
+      } else {
+        lines.push(`${indent}${exprToKotlin(stmt.target, stateVars)} = ${exprToKotlin(stmt.value, stateVars)}`);
+      }
+    } else if (stmt.type === N.EXPR_STMT) {
+      lines.push(`${indent}${exprToKotlin(stmt.expr, stateVars)}`);
+    } else if (stmt.type === N.IF) {
+      const test = exprToKotlin(stmt.test, stateVars);
+      lines.push(`${indent}if (${test}) {`);
+      lines.push(handlerToKotlin(stmt.consequent, indent + '    ', stateVars));
+      if (stmt.alternate) {
+        lines.push(`${indent}} else {`);
+        lines.push(handlerToKotlin(stmt.alternate, indent + '    ', stateVars));
+      }
+      lines.push(`${indent}}`);
+    } else if (stmt.type === N.NAVIGATE) {
+      const target = stmt.target;
+      const info = CURRENT_SCREEN_MAP && CURRENT_SCREEN_MAP.get(target);
+      const cls = info ? info.cls : (target.replace(/[^a-zA-Z0-9]/g, '') || 'Screen') + 'Activity';
+      lines.push(`${indent}startActivity(android.content.Intent(this, ${cls}::class.java))`);
+    } else if (stmt.type === N.TOAST) {
+      lines.push(`${indent}android.widget.Toast.makeText(this, ${exprToKotlin(stmt.text, stateVars)}.toString(), android.widget.Toast.LENGTH_SHORT).show()`);
+    } else if (stmt.type === N.ALERT) {
+      lines.push(`${indent}androidx.appcompat.app.AlertDialog.Builder(this)`);
+      lines.push(`${indent}    .setTitle(${exprToKotlin(stmt.title, stateVars)}.toString())`);
+      lines.push(`${indent}    .setMessage(${exprToKotlin(stmt.message, stateVars)}.toString())`);
+      lines.push(`${indent}    .setPositiveButton("حسناً") { _, _ ->`);
+      if (stmt.handler) {
+        lines.push(handlerToKotlin(stmt.handler, indent + '        ', stateVars));
+      }
+      lines.push(`${indent}    }`);
+      lines.push(`${indent}    .setNegativeButton("إلغاء", null)`);
+      lines.push(`${indent}    .show()`);
+    } else if (stmt.type === N.BACK) {
+      lines.push(`${indent}finish()`);
+    }
+  }
+  lines.push(`${indent}updateUI()`);
+  return lines.join('\n');
+}
+
+// ═══ XML ═══
+let idCounter = 0;
+let CURRENT_SCREEN_MAP = null; // خريطة اسم عربي → اسم فئة
+let BINDING_TYPES = null; // خريطة اسم حالة → معلوماتها
+function nextId() { idCounter++; return `view_${idCounter}`; }
+
+function buildXml(children, indent = '        ') {
+  const lines = [];
+  for (const child of children) {
+    if (child.type === N.STATE_DECL) continue;
+    if (child.type === N.UI_HEADING) {
+      const id = nextId();
+      lines.push(`${indent}<TextView`);
+      lines.push(`${indent}    android:id="@+id/${id}"`);
+      lines.push(`${indent}    android:layout_width="wrap_content"`);
+      lines.push(`${indent}    android:layout_height="wrap_content"`);
+      lines.push(`${indent}    android:text="${escapeXml(staticString(child.text))}"`);
+      lines.push(`${indent}    android:textColor="#1A237E"`);
+      lines.push(`${indent}    android:textSize="32sp"`);
+      lines.push(`${indent}    android:textStyle="bold"`);
+      lines.push(`${indent}    android:layout_marginTop="8dp"`);
+      lines.push(`${indent}    android:layout_marginBottom="16dp" />`);
+      child._id = id;
+    } else if (child.type === N.UI_TEXT) {
+      const id = nextId();
+      lines.push(`${indent}<TextView`);
+      lines.push(`${indent}    android:id="@+id/${id}"`);
+      lines.push(`${indent}    android:layout_width="match_parent"`);
+      lines.push(`${indent}    android:layout_height="wrap_content"`);
+      lines.push(`${indent}    android:text="${escapeXml(staticString(child.expr))}"`);
+      lines.push(`${indent}    android:textColor="#212121"`);
+      lines.push(`${indent}    android:textSize="16sp"`);
+      lines.push(`${indent}    android:layout_marginTop="8dp"`);
+      lines.push(`${indent}    android:layout_marginBottom="8dp" />`);
+      child._id = id;
+    } else if (child.type === N.UI_BUTTON) {
+      const id = nextId();
+      lines.push(`${indent}<com.google.android.material.button.MaterialButton`);
+      lines.push(`${indent}    android:id="@+id/${id}"`);
+      lines.push(`${indent}    android:layout_width="match_parent"`);
+      lines.push(`${indent}    android:layout_height="56dp"`);
+      lines.push(`${indent}    android:text="${escapeXml(staticString(child.text))}"`);
+      lines.push(`${indent}    android:textSize="16sp"`);
+      lines.push(`${indent}    android:layout_marginTop="16dp"`);
+      lines.push(`${indent}    app:backgroundTint="#1A237E"`);
+      lines.push(`${indent}    app:cornerRadius="8dp" />`);
+      child._id = id;
+    } else if (child.type === N.UI_CARD) {
+      const title = staticString(child.title);
+      lines.push(`${indent}<com.google.android.material.card.MaterialCardView`);
+      lines.push(`${indent}    android:layout_width="match_parent"`);
+      lines.push(`${indent}    android:layout_height="wrap_content"`);
+      lines.push(`${indent}    android:layout_marginTop="16dp"`);
+      lines.push(`${indent}    app:cardCornerRadius="12dp"`);
+      lines.push(`${indent}    app:cardElevation="2dp">`);
+      lines.push('');
+      lines.push(`${indent}    <LinearLayout`);
+      lines.push(`${indent}        android:layout_width="match_parent"`);
+      lines.push(`${indent}        android:layout_height="wrap_content"`);
+      lines.push(`${indent}        android:orientation="vertical"`);
+      lines.push(`${indent}        android:padding="16dp">`);
+      lines.push('');
+      if (title) {
+        lines.push(`${indent}        <TextView`);
+        lines.push(`${indent}            android:layout_width="wrap_content"`);
+        lines.push(`${indent}            android:layout_height="wrap_content"`);
+        lines.push(`${indent}            android:text="${escapeXml(title)}"`);
+        lines.push(`${indent}            android:textColor="#1A237E"`);
+        lines.push(`${indent}            android:textSize="18sp"`);
+        lines.push(`${indent}            android:textStyle="bold" />`);
+        lines.push('');
+      }
+      lines.push(buildXml(child.children, indent + '        '));
+      lines.push(`${indent}    </LinearLayout>`);
+      lines.push(`${indent}</com.google.android.material.card.MaterialCardView>`);
+      child._id = nextId();
+    } else if (child.type === N.UI_TEXTFIELD) {
+      const id = nextId();
+      // نوع الإدخال يتبع نوع الحالة المرتبطة
+      let inputType = 'text';
+      if (child.binding && BINDING_TYPES && BINDING_TYPES.has(child.binding)) {
+        const t = BINDING_TYPES.get(child.binding).type;
+        if (t === 'Double') inputType = 'numberDecimal';
+        else if (t === 'Boolean') inputType = 'text';
+        else inputType = 'text';
+      }
+      lines.push(`${indent}<com.google.android.material.textfield.TextInputLayout`);
+      lines.push(`${indent}    android:layout_width="match_parent"`);
+      lines.push(`${indent}    android:layout_height="wrap_content"`);
+      lines.push(`${indent}    android:hint="${escapeXml(staticString(child.hint))}"`);
+      lines.push(`${indent}    android:layout_marginTop="12dp"`);
+      lines.push(`${indent}    app:boxStrokeColor="#1A237E"`);
+      lines.push(`${indent}    app:boxStrokeWidth="2dp">`);
+      lines.push('');
+      lines.push(`${indent}    <com.google.android.material.textfield.TextInputEditText`);
+      lines.push(`${indent}        android:id="@+id/${id}"`);
+      lines.push(`${indent}        android:layout_width="match_parent"`);
+      lines.push(`${indent}        android:layout_height="wrap_content"`);
+      lines.push(`${indent}        android:textSize="16sp"`);
+      lines.push(`${indent}        android:inputType="${inputType}" />`);
+      lines.push(`${indent}</com.google.android.material.textfield.TextInputLayout>`);
+      child._id = id;
+    } else if (child.type === N.UI_IMAGE) {
+      const id = nextId();
+      const name = staticString(child.name) || 'ic_menu_info_details';
+      const srcAttr = name.startsWith('@') ? name : `@android:drawable/${name}`;
+      lines.push(`${indent}<ImageView`);
+      lines.push(`${indent}    android:id="@+id/${id}"`);
+      lines.push(`${indent}    android:layout_width="80dp"`);
+      lines.push(`${indent}    android:layout_height="80dp"`);
+      lines.push(`${indent}    android:src="${escapeXml(srcAttr)}"`);
+      lines.push(`${indent}    android:layout_gravity="center_horizontal"`);
+      lines.push(`${indent}    android:layout_marginTop="16dp"`);
+      lines.push(`${indent}    android:layout_marginBottom="16dp"`);
+      lines.push(`${indent}    android:contentDescription="${escapeXml(name)}" />`);
+      child._id = id;
+    } else if (child.type === N.UI_CHECKBOX) {
+      const id = nextId();
+      lines.push(`${indent}<com.google.android.material.checkbox.MaterialCheckBox`);
+      lines.push(`${indent}    android:id="@+id/${id}"`);
+      lines.push(`${indent}    android:layout_width="match_parent"`);
+      lines.push(`${indent}    android:layout_height="wrap_content"`);
+      lines.push(`${indent}    android:text="${escapeXml(staticString(child.text))}"`);
+      lines.push(`${indent}    android:textSize="16sp"`);
+      lines.push(`${indent}    android:textColor="#212121"`);
+      lines.push(`${indent}    android:layout_marginTop="8dp"`);
+      lines.push(`${indent}    android:buttonTint="#1A237E" />`);
+      child._id = id;
+    } else if (child.type === N.UI_SWITCH) {
+      const id = nextId();
+      lines.push(`${indent}<com.google.android.material.materialswitch.MaterialSwitch`);
+      lines.push(`${indent}    android:id="@+id/${id}"`);
+      lines.push(`${indent}    android:layout_width="match_parent"`);
+      lines.push(`${indent}    android:layout_height="wrap_content"`);
+      lines.push(`${indent}    android:text="${escapeXml(staticString(child.text))}"`);
+      lines.push(`${indent}    android:textSize="16sp"`);
+      lines.push(`${indent}    android:textColor="#212121"`);
+      lines.push(`${indent}    android:layout_marginTop="8dp" />`);
+      child._id = id;
+    } else if (child.type === N.UI_PROGRESS) {
+      const id = nextId();
+      lines.push(`${indent}<ProgressBar`);
+      lines.push(`${indent}    android:id="@+id/${id}"`);
+      lines.push(`${indent}    style="?android:attr/progressBarStyleHorizontal"`);
+      lines.push(`${indent}    android:layout_width="match_parent"`);
+      lines.push(`${indent}    android:layout_height="wrap_content"`);
+      lines.push(`${indent}    android:max="100"`);
+      lines.push(`${indent}    android:progress="${escapeXml(staticString(child.value) || '0')}"`);
+      lines.push(`${indent}    android:progressTint="#1A237E"`);
+      lines.push(`${indent}    android:layout_marginTop="16dp"`);
+      lines.push(`${indent}    android:layout_marginBottom="16dp" />`);
+      child._id = id;
+    } else if (child.type === N.UI_SPACER) {
+      const size = staticString(child.size) || '16';
+      lines.push(`${indent}<Space`);
+      lines.push(`${indent}    android:layout_width="match_parent"`);
+      lines.push(`${indent}    android:layout_height="${escapeXml(size)}dp" />`);
+    } else if (child.type === N.UI_DIVIDER) {
+      lines.push(`${indent}<View`);
+      lines.push(`${indent}    android:layout_width="match_parent"`);
+      lines.push(`${indent}    android:layout_height="1dp"`);
+      lines.push(`${indent}    android:background="#E0E0E0"`);
+      lines.push(`${indent}    android:layout_marginTop="12dp"`);
+      lines.push(`${indent}    android:layout_marginBottom="12dp" />`);
+    } else if (child.type === N.UI_ROW) {
+      lines.push(`${indent}<LinearLayout`);
+      lines.push(`${indent}    android:layout_width="match_parent"`);
+      lines.push(`${indent}    android:layout_height="wrap_content"`);
+      lines.push(`${indent}    android:orientation="horizontal"`);
+      lines.push(`${indent}    android:layout_marginTop="8dp">`);
+      lines.push('');
+      lines.push(buildXml(child.children, indent + '    '));
+      lines.push(`${indent}</LinearLayout>`);
+    } else if (child.type === N.UI_LIST) {
+      const id = nextId();
+      lines.push(`${indent}<LinearLayout`);
+      lines.push(`${indent}    android:id="@+id/${id}"`);
+      lines.push(`${indent}    android:layout_width="match_parent"`);
+      lines.push(`${indent}    android:layout_height="wrap_content"`);
+      lines.push(`${indent}    android:orientation="vertical"`);
+      lines.push(`${indent}    android:layout_marginTop="8dp" />`);
+      child._id = id;
+    }
+  }
+  return lines.join('\n');
+}
+
+// ═══ Kotlin Body ═══
+function buildKotlinBody(children, indent, stateVars) {
+  const lines = [];
+  for (const child of children) {
+    if (child.type === N.STATE_DECL) continue;
+    if (child.type === N.UI_BUTTON) {
+      lines.push(`${indent}findViewById<com.google.android.material.button.MaterialButton>(R.id.${child._id}).setOnClickListener {`);
+      lines.push(handlerToKotlin(child.handler, indent + '    ', stateVars));
+      lines.push(`${indent}}`);
+    } else if (child.type === N.UI_TEXTFIELD && child.binding) {
+      const info = stateVars.get(child.binding);
+      const t = info.type;
+      let convert;
+      if (t === 'Double') convert = `(s?.toString()?.toDoubleOrNull() ?: 0.0)`;
+      else if (t === 'Boolean') convert = `(s?.toString()?.toBoolean() ?: false)`;
+      else convert = `(s?.toString() ?: "")`;
+      lines.push(`${indent}findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.${child._id}).addTextChangedListener(object : android.text.TextWatcher {`);
+      lines.push(`${indent}    override fun afterTextChanged(s: android.text.Editable?) {`);
+      lines.push(`${indent}        STATE_${child.binding} = ${convert}`);
+      if (info.persistent) {
+        lines.push(`${indent}        savePref("${child.binding}", STATE_${child.binding})`);
+      }
+      lines.push(`${indent}        updateUI()`);
+      lines.push(`${indent}    }`);
+      lines.push(`${indent}    override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}`);
+      lines.push(`${indent}    override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}`);
+      lines.push(`${indent}})`);
+    } else if (child.type === N.UI_CARD || child.type === N.UI_ROW) {
+      const inner = buildKotlinBody(child.children, indent, stateVars);
+      if (inner) lines.push(inner);
+    } else if (child.type === N.KOTLIN_RAW) {
+      lines.push(`${indent}${child.code}`);
+    }
+  }
+  return lines.filter(Boolean).join('\n');
+}
+
+// ═══ بناء عناصر القائمة ديناميكياً ═══
+function buildListItemKotlin(template, stateVars, itemVar = 'العنصر', indent = '            ') {
+  // نبني Kotlin يُنشئ Views لعنصر واحد داخل linearLayout
+  const lines = [];
+  for (const child of template) {
+    if (child.type === N.UI_TEXT || child.type === N.UI_HEADING) {
+      const expr = child.type === N.UI_HEADING ? child.text : child.expr;
+      const kt = exprToKotlin(expr, stateVars);
+      lines.push(`${indent}val ${'tv_' + Math.random().toString(36).slice(2, 8)} = android.widget.TextView(this).apply {`);
+      lines.push(`${indent}    text = ${kt}`);
+      lines.push(`${indent}    textSize = 16f`);
+      lines.push(`${indent}    setTextColor(android.graphics.Color.parseColor("#212121"))`);
+      lines.push(`${indent}    setPadding(16, 16, 16, 16)`);
+      lines.push(`${indent}}`);
+      // استخرجنا الاسم من closure — نحتاج نحفظه
+      // الأسطر السابقة بنت متغيراً بدون حفظ الاسم. نُبسّط: نستخدم الأسلوب المباشر
+    }
+  }
+  return lines;
+}
+
+// نسخة أنظف: نبني العنصر كاملاً كسلسلة Kotlin
+function buildListItemBody(template, stateVars, itemVarName, indent = '                ') {
+  const lines = [];
+  const hasText = template.some(c => c.type === N.UI_TEXT || c.type === N.UI_HEADING);
+  const hasButton = template.some(c => c.type === N.UI_BUTTON);
+  const asRow = hasText && hasButton;
+
+  // بطاقة لكل عنصر
+  lines.push(`${indent}val card = com.google.android.material.card.MaterialCardView(this)`);
+  lines.push(`${indent}val cardLp = android.widget.LinearLayout.LayoutParams(`);
+  lines.push(`${indent}    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,`);
+  lines.push(`${indent}    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT`);
+  lines.push(`${indent})`);
+  lines.push(`${indent}cardLp.setMargins(0, 6, 0, 6)`);
+  lines.push(`${indent}card.layoutParams = cardLp`);
+  lines.push(`${indent}card.radius = 24f`);
+  lines.push(`${indent}card.cardElevation = 4f`);
+  lines.push(`${indent}card.setCardBackgroundColor(android.graphics.Color.WHITE)`);
+
+  // الحاوية الداخلية
+  lines.push(`${indent}val inner = android.widget.LinearLayout(this).apply {`);
+  if (asRow) {
+    lines.push(`${indent}    orientation = android.widget.LinearLayout.HORIZONTAL`);
+  } else {
+    lines.push(`${indent}    orientation = android.widget.LinearLayout.VERTICAL`);
+  }
+  lines.push(`${indent}    setPadding(40, 40, 40, 40)`);
+  lines.push(`${indent}    gravity = android.view.Gravity.CENTER_VERTICAL`);
+  lines.push(`${indent}}`);
+
+  for (const child of template) {
+    if (child.type === N.UI_DONE) {
+      // CheckBox للإتمام
+      lines.push(`${indent}val cbItem = com.google.android.material.checkbox.MaterialCheckBox(this).apply {`);
+      lines.push(`${indent}    isChecked = ${itemVarName}.startsWith("✓ ")`);
+      lines.push(`${indent}    setOnCheckedChangeListener { _, checked ->`);
+      lines.push(`${indent}        val idx = STATE_مهام.indexOf(${itemVarName})`);
+      lines.push(`${indent}        if (idx >= 0) {`);
+      lines.push(`${indent}            if (checked && !${itemVarName}.startsWith("✓ ")) {`);
+      lines.push(`${indent}                STATE_مهام[idx] = "✓ " + ${itemVarName}`);
+      lines.push(`${indent}            } else if (!checked && ${itemVarName}.startsWith("✓ ")) {`);
+      lines.push(`${indent}                STATE_مهام[idx] = ${itemVarName}.substring(2)`);
+      lines.push(`${indent}            }`);
+      lines.push(`${indent}            savePref("مهام", STATE_مهام)`);
+      lines.push(`${indent}            updateUI()`);
+      lines.push(`${indent}        }`);
+      lines.push(`${indent}    }`);
+      lines.push(`${indent}}`);
+      lines.push(`${indent}inner.addView(cbItem)`);
+    } else if (child.type === N.UI_TEXT || child.type === N.UI_HEADING) {
+      const kt = exprToKotlin(child.expr || child.text, stateVars);
+      lines.push(`${indent}val tvItem = android.widget.TextView(this).apply {`);
+      lines.push(`${indent}    text = ${kt}.replace("✓ ", "")`);
+      lines.push(`${indent}    textSize = 17f`);
+      lines.push(`${indent}    setTextColor(android.graphics.Color.parseColor("#212121"))`);
+      lines.push(`${indent}    if (${itemVarName}.startsWith("✓ ")) {`);
+      lines.push(`${indent}        paintFlags = paintFlags or android.graphics.Paint.STRIKE_THRU_TEXT_FLAG`);
+      lines.push(`${indent}        setTextColor(android.graphics.Color.parseColor("#9E9E9E"))`);
+      lines.push(`${indent}    }`);
+      if (asRow) {
+        lines.push(`${indent}    layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)`);
+      }
+      lines.push(`${indent}}`);
+      lines.push(`${indent}inner.addView(tvItem)`);
+    } else if (child.type === N.UI_BUTTON) {
+      const ktText = exprToKotlin(child.text, stateVars);
+      lines.push(`${indent}val btnItem = com.google.android.material.button.MaterialButton(this).apply {`);
+      lines.push(`${indent}    text = ${ktText}`);
+      lines.push(`${indent}    textSize = 14f`);
+      lines.push(`${indent}    setTextColor(android.graphics.Color.WHITE)`);
+      lines.push(`${indent}    setBackgroundColor(android.graphics.Color.parseColor("#E53935"))`);
+      lines.push(`${indent}    setPadding(30, 0, 30, 0)`);
+      lines.push(`${indent}}`);
+      lines.push(`${indent}btnItem.setOnClickListener {`);
+      for (const stmt of child.handler.body) {
+        if (stmt.type === N.KOTLIN_RAW) {
+          lines.push(`${indent}    ${stmt.code}`);
+        } else if (stmt.type === N.EXPR_STMT && stmt.expr.type === N.CALL) {
+          if (stmt.expr.callee.name === 'احذف_من') {
+            const listName = exprToKotlin(stmt.expr.args[0], stateVars);
+            lines.push(`${indent}    ${listName}.remove(${itemVarName})`);
+          }
+        } else if (stmt.type === N.TOAST) {
+          lines.push(`${indent}    android.widget.Toast.makeText(this, ${exprToKotlin(stmt.text, stateVars)}, android.widget.Toast.LENGTH_SHORT).show()`);
+        }
+      }
+      lines.push(`${indent}    updateUI()`);
+      lines.push(`${indent}}`);
+      lines.push(`${indent}inner.addView(btnItem)`);
+    }
+  }
+
+  lines.push(`${indent}card.addView(inner)`);
+  lines.push(`${indent}container.addView(card)`);
+  return lines;
+}
+
+// ═══ updateUI ═══
+function buildUpdateUI(children, stateVars) {
+  const lines = [];
+  for (const child of children) {
+    if (child.type === N.STATE_DECL) continue;
+    if (child.type === N.UI_HEADING || child.type === N.UI_TEXT) {
+      const expr = child.type === N.UI_HEADING ? child.text : child.expr;
+      if (hasStateRef(expr, stateVars)) {
+        lines.push(`        findViewById<android.widget.TextView>(R.id.${child._id}).text = ${exprToKotlin(expr, stateVars)}`);
+      }
+    }
+    if (child.type === N.UI_CARD || child.type === N.UI_ROW) {
+      const inner = buildUpdateUI(child.children, stateVars);
+      if (inner) lines.push(inner);
+    }
+    if (child.type === N.UI_LIST) {
+      // امسح العناصر القديمة
+      lines.push(`        run {`);
+      lines.push(`            val container = findViewById<android.widget.LinearLayout>(R.id.${child._id})`);
+      lines.push(`            container.removeAllViews()`);
+      lines.push(`            val sourceList = STATE_${child.source}`);
+      lines.push(`            if (sourceList.isEmpty()) {`);
+      lines.push(`                val empty = android.widget.TextView(this).apply {`);
+      lines.push(`                    text = "لا توجد مهام — أضف واحدة من الأعلى"`);
+      lines.push(`                    textSize = 15f`);
+      lines.push(`                    setTextColor(android.graphics.Color.parseColor("#9E9E9E"))`);
+      lines.push(`                    gravity = android.view.Gravity.CENTER`);
+      lines.push(`                    setPadding(0, 60, 0, 60)`);
+      lines.push(`                }`);
+      lines.push(`                container.addView(empty)`);
+      lines.push(`            }`);
+      lines.push(`            for (العنصر in sourceList) {`);
+      // ابنِ عناصر القائمة
+      const itemBody = buildListItemBody(child.template, stateVars, 'العنصر', '                ');
+      if (itemBody.length) {
+        lines.push(itemBody.join('\n'));
+      }
+      lines.push(`            }`);
+      lines.push(`        }`);
+    }
+  }
+  return lines.join('\n');
+}
+
+// ═══ توليد المشروع ═══
+function toPackage(name) {
+  const clean = String(name).replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'app';
+  return 'com.narmin.' + clean;
+}
+function toClassName(name) {
+  const clean = String(name).replace(/[^a-zA-Z0-9]/g, '');
+  return (clean || 'App') + 'Activity';
+}
+
+function generateProject(screenNode, projectName, targetDir, extra = {}) {
+  idCounter = 0;
+  // خريطة افتراضية لشاشة واحدة
+  CURRENT_SCREEN_MAP = new Map();
+  CURRENT_SCREEN_MAP.set(screenNode.name, { cls: toClassName(projectName), index: 0 });
+  const حزمة = toPackage(projectName);
+  const فئة = toClassName(projectName);
+  const packagePath = حزمة.replace(/\./g, '/');
+  const stateVars = collectState(screenNode.children);
+  BINDING_TYPES = stateVars;
+
+  // XML
+  const xmlChildren = buildXml(screenNode.children);
+  const activityXml = `<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F5F7FA"
+    android:layoutDirection="rtl">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp"
+        android:fontFamily="sans-serif">
+
+${xmlChildren}
+
+    </LinearLayout>
+</ScrollView>
+`;
+
+  // Kotlin
+  const ktBody = buildKotlinBody(screenNode.children, '        ', stateVars) || '        // لا شيء';
+  const updateUIBody = buildUpdateUI(screenNode.children, stateVars) || '        // لا شيء ديناميكي';
+
+  const importsList = (extra.imports || []).map((p) => `import ${p}`).join('\n');
+  const importsSection = importsList ? '\n' + importsList : '';
+
+  const stateDecls = Array.from(stateVars.entries())
+    .map(([name, info]) => `    private var STATE_${name}: ${info.type} = ${info.init}`)
+    .join('\n');
+  const stateBlock = stateDecls ? '\n' + stateDecls + '\n' : '';
+
+  const mainKt = `package ${حزمة}
+
+import android.os.Build
+import android.os.Bundle
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity${importsSection}
+
+class ${فئة} : AppCompatActivity() {
+${stateBlock}
+    private fun formatNumber(n: Double): String {
+        return if (n == n.toLong().toDouble()) n.toLong().toString()
+               else String.format("%.6f", n).trimEnd('0').trimEnd('.')
+    }
+
+    private fun updateUI() {
+${updateUIBody}
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+${ktBody}
+
+        updateUI()
+    }
+}
+`;
+
+  const manifest = `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application
+        android:allowBackup="true"\n        android:icon="@mipmap/ic_launcher"
+        android:label="${escapeXml(screenNode.name)}"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.App">
+        <activity
+            android:name=".${فئة}"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
+`;
+
+  const stringsXml = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">${escapeXml(screenNode.name)}</string>
+</resources>
+`;
+
+  const themesXml = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.App" parent="Theme.Material3.Light.NoActionBar">
+        <item name="colorPrimary">#1A237E</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="android:statusBarColor">#1A237E</item>
+    </style>
+</resources>
+`;
+
+  const dirs = [
+    `app/src/main/java/${packagePath}`,
+    'app/src/main/res/layout',
+    'app/src/main/res/values',
+  ];
+  for (const d of dirs) fs.mkdirSync(path.join(targetDir, d), { recursive: true });
+
+  fs.writeFileSync(path.join(targetDir, 'app/src/main/res/layout/activity_main.xml'), activityXml, 'utf8');
+  fs.writeFileSync(path.join(targetDir, `app/src/main/java/${packagePath}/${فئة}.kt`), mainKt, 'utf8');
+  fs.writeFileSync(path.join(targetDir, 'app/src/main/AndroidManifest.xml'), manifest, 'utf8');
+  fs.writeFileSync(path.join(targetDir, 'app/src/main/res/values/strings.xml'), stringsXml, 'utf8');
+  fs.writeFileSync(path.join(targetDir, 'app/src/main/res/values/themes.xml'), themesXml, 'utf8');
+
+  // أيقونة التطبيق (mipmap)
+  const mipDir = path.join(targetDir, 'app/src/main/res/mipmap');
+  fs.mkdirSync(mipDir, { recursive: true });
+  fs.writeFileSync(path.join(mipDir, 'ic_launcher.xml'),
+    '<?xml version="1.0" encoding="utf-8"?>\n' +
+    '<vector xmlns:android="http://schemas.android.com/apk/res/android"\n' +
+    '    android:width="108dp"\n' +
+    '    android:height="108dp"\n' +
+    '    android:viewportWidth="108"\n' +
+    '    android:viewportHeight="108">\n' +
+    '    <path android:fillColor="#1A237E" android:pathData="M0,0h108v108h-108z" />\n' +
+    '    <path android:strokeColor="#FFC107" android:strokeWidth="3" android:pathData="M54,8 L54,100" />\n' +
+    '    <path android:fillColor="#FFFFFF" android:pathData="M28,30 L28,80 L38,80 L38,50 L64,80 L74,80 L74,30 L64,30 L64,60 L38,30 Z" />\n' +
+    '</vector>\n',
+    'utf8');
+
+
+
+  // أيقونة التطبيق
+  const drawableDir = path.join(targetDir, 'app/src/main/res/drawable');
+  fs.mkdirSync(drawableDir, { recursive: true });
+  const iconXml = `<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#1A237E" android:pathData="M0,0h108v108h-108z" />
+    <path android:strokeColor="#FFC107" android:strokeWidth="3" android:pathData="M54,8 L54,100" />
+    <path android:fillColor="#FFFFFF" android:pathData="M28,30 L28,80 L38,80 L38,50 L64,80 L74,80 L74,30 L64,30 L64,60 L38,30 Z" />
+</vector>
+`;
+  fs.writeFileSync(path.join(drawableDir, 'ic_launcher.xml'), iconXml, 'utf8');
+
+  return { حزمة, فئة };
+}
+
+// ═══ توليد مشروع متعدد الشاشات ═══
+function generateMultiProject(screens, projectName, targetDir, extra = {}) {
+  const حزمة = toPackage(projectName);
+  const packagePath = حزمة.replace(/\./g, '/');
+
+  // اسمح بتسمية: نستخدم "Screen1Activity", "Screen2Activity", ...
+  const screenMap = new Map(); // اسم العرض → { class, index }
+  screens.forEach((screen, i) => {
+    const cls = 'Screen' + (i + 1) + 'Activity';
+    screenMap.set(screen.name, { cls, index: i });
+  });
+  // اجعل الخريطة متاحة لـ handlerToKotlin
+  CURRENT_SCREEN_MAP = screenMap;
+
+  const dirs = [
+    `app/src/main/java/${packagePath}`,
+    'app/src/main/res/layout',
+    'app/src/main/res/values',
+  ];
+  for (const d of dirs) fs.mkdirSync(path.join(targetDir, d), { recursive: true });
+
+  // ولّد كل شاشة
+  for (const screen of screens) {
+    const info = screenMap.get(screen.name);
+    idCounter = 0;
+    const stateVars = collectState(screen.children);
+    BINDING_TYPES = stateVars;
+
+    // XML
+    const xmlChildren = buildXml(screen.children);
+    const activityXml = `<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F5F7FA"
+    android:layoutDirection="rtl">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+${xmlChildren}
+
+    </LinearLayout>
+</ScrollView>
+`;
+    const layoutName = 'activity_' + info.cls.replace('Activity', '').toLowerCase();
+    fs.writeFileSync(path.join(targetDir, `app/src/main/res/layout/${layoutName}.xml`), activityXml, 'utf8');
+
+    // Kotlin
+    const ktBody = buildKotlinBody(screen.children, '        ', stateVars) || '        // لا شيء';
+    const updateUIBody = buildUpdateUI(screen.children, stateVars) || '        // لا شيء ديناميكي';
+
+    const stateDecls = Array.from(stateVars.entries())
+      .map(([name, sinfo]) => `    private var STATE_${name}: ${sinfo.type} = ${sinfo.init}`)
+      .join('\n');
+    const stateBlock = stateDecls ? '\n' + stateDecls + '\n' : '';
+
+    // سطور تحميل القيم المحفوظة
+    const loadLines = Array.from(stateVars.entries())
+      .filter(([_, sinfo]) => sinfo.persistent)
+      .map(([name, sinfo]) => {
+        if (sinfo.isList) {
+          return `        STATE_${name} = try {
+            val arr = org.json.JSONArray(prefs.getString("${name}", "[]") ?: "[]")
+            val list = mutableListOf<String>()
+            for (i in 0 until arr.length()) list.add(arr.getString(i))
+            list
+        } catch (e: Exception) { mutableListOf() }`;
+        }
+        const dflt = sinfo.type === 'Double' ? '0.0'
+                   : sinfo.type === 'Boolean' ? 'false'
+                   : '""';
+        if (sinfo.type === 'Double') {
+          return `        STATE_${name} = (prefs.getString("${name}", "${dflt}") ?: "${dflt}").toDoubleOrNull() ?: ${dflt}`;
+        } else if (sinfo.type === 'Boolean') {
+          return `        STATE_${name} = (prefs.getString("${name}", "false") ?: "false").toBoolean()`;
+        } else {
+          return `        STATE_${name} = prefs.getString("${name}", ${sinfo.init}) ?: ${sinfo.init}`;
+        }
+      })
+      .join('\n');
+    const loadBlock = loadLines ? '\n' + loadLines + '\n' : '';
+
+    const importsList = (extra.imports || []).map((p) => `import ${p}`).join('\n');
+    const importsSection = importsList ? '\n' + importsList : '';
+
+    const mainKt = `package ${حزمة}
+
+import android.os.Build
+import android.os.Bundle
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity${importsSection}
+
+class ${info.cls} : AppCompatActivity() {
+${stateBlock}
+    private fun formatNumber(n: Double): String {
+        return if (n == n.toLong().toDouble()) n.toLong().toString()
+               else String.format("%.6f", n).trimEnd('0').trimEnd('.')
+    }
+
+    private fun savePref(key: String, value: Any?) {
+        val str = when (value) {
+            is List<*> -> {
+                val arr = org.json.JSONArray()
+                for (v in value) arr.put(v)
+                arr.toString()
+            }
+            else -> value?.toString() ?: ""
+        }
+        getSharedPreferences("narmin_prefs", MODE_PRIVATE).edit().putString(key, str).apply()
+    }
+
+    private fun updateUI() {
+${updateUIBody}
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.${layoutName})
+
+        val prefs = getSharedPreferences("narmin_prefs", MODE_PRIVATE)
+${loadBlock}
+${ktBody}
+
+        updateUI()
+    }
+}
+`;
+    fs.writeFileSync(path.join(targetDir, `app/src/main/java/${packagePath}/${info.cls}.kt`), mainKt, 'utf8');
+  }
+
+  // Manifest
+  const activitiesXml = screens.map((screen) => {
+    const info = screenMap.get(screen.name);
+    const isFirst = info.index === 0;
+    return `        <activity
+            android:name=".${info.cls}"
+            android:exported="${isFirst ? 'true' : 'false'}"${isFirst ? '>' : ' />'}
+${isFirst ? `            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>` : ''}`;
+  }).join('\n');
+
+  const permissionsBlock = (extra.permissions || []).map((p) => `    <uses-permission android:name="${p}" />`).join('\n');
+
+  const manifest = `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+${permissionsBlock}
+    <application
+        android:allowBackup="true"\n        android:icon="@mipmap/ic_launcher"
+        android:label="${escapeXml(screens[0].name)}"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.App">
+${activitiesXml}
+    </application>
+</manifest>
+`;
+
+  const stringsXml = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">${escapeXml(screens[0].name)}</string>
+</resources>
+`;
+
+  const themesXml = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.App" parent="Theme.Material3.Light.NoActionBar">
+        <item name="colorPrimary">#1A237E</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="android:statusBarColor">#1A237E</item>
+    </style>
+</resources>
+`;
+
+  fs.writeFileSync(path.join(targetDir, 'app/src/main/AndroidManifest.xml'), manifest, 'utf8');
+  fs.writeFileSync(path.join(targetDir, 'app/src/main/res/values/strings.xml'), stringsXml, 'utf8');
+  fs.writeFileSync(path.join(targetDir, 'app/src/main/res/values/themes.xml'), themesXml, 'utf8');  return { حزمة, screens: screens.map((s) => ({ name: s.name, cls: screenMap.get(s.name).cls })) };
+}
+
+module.exports = { generateProject, generateMultiProject };

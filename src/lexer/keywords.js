@@ -27,6 +27,39 @@ const KEYWORDS = {
   'التقط': 'CATCH', 'catch': 'CATCH',
   'اخيرا': 'FINALLY', 'finally': 'FINALLY',
   'ارم': 'THROW', 'throw': 'THROW',
+
+  // واجهات أندرويد
+  'شاشة': 'SCREEN', 'screen': 'SCREEN',
+  'انتقل': 'NAVIGATE', 'navigate': 'NAVIGATE',
+  'تنبيه': 'TOAST', 'toast': 'TOAST',
+  'حوار': 'ALERT', 'alert': 'ALERT',
+  'مع': 'WITH', 'with': 'WITH',
+  'رجوع': 'BACK', 'back': 'BACK',
+  'حالة': 'STATE', 'state': 'STATE',
+  'محفوظ': 'SAVED_STATE', 'saved': 'SAVED_STATE',
+  'قائمة': 'UI_LIST', 'uilist': 'UI_LIST',
+  'تمّ': 'UI_DONE', 'done': 'UI_DONE',
+  'العنصر': 'ITEM', 'item': 'ITEM',
+  'احذف_من': 'REMOVE_FROM', 'removefrom': 'REMOVE_FROM',
+  'عنوان': 'HEADING', 'heading': 'HEADING',
+  'كتابة': 'UI_TEXT', 'uitext': 'UI_TEXT',
+  'زر': 'UI_BUTTON', 'button': 'UI_BUTTON',
+  'عند_الضغط': 'ON_CLICK', 'onclick': 'ON_CLICK',
+  'بطاقة': 'UI_CARD', 'card': 'UI_CARD',
+  'حقل': 'UI_TEXTFIELD', 'textfield': 'UI_TEXTFIELD',
+  'صورة': 'UI_IMAGE', 'image': 'UI_IMAGE',
+  'اختيار': 'UI_CHECKBOX', 'checkbox': 'UI_CHECKBOX',
+  'مفتاح': 'UI_SWITCH', 'switch': 'UI_SWITCH',
+  'تقدم': 'UI_PROGRESS', 'progress': 'UI_PROGRESS',
+  'صف': 'UI_ROW', 'row': 'UI_ROW',
+  'مسافة': 'UI_SPACER', 'spacer': 'UI_SPACER',
+  'فاصل': 'UI_DIVIDER', 'divider': 'UI_DIVIDER',
+
+  // مخرج كوتلن
+  'كوتلن': 'KOTLIN_RAW', 'kotlin': 'KOTLIN_RAW',
+  'استيراد_كوتلن': 'KOTLIN_IMPORT', 'kotlinimport': 'KOTLIN_IMPORT',
+  'مكتبة': 'GRADLE_DEP', 'library': 'GRADLE_DEP',
+  'اذن': 'ANDROID_PERMISSION', 'permission': 'ANDROID_PERMISSION',
 };
 
 function isKeyword(text) {
