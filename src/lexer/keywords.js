@@ -63,6 +63,11 @@ const KEYWORDS = {
   'سنيكر': 'SNACKBAR', 'snackbar': 'SNACKBAR',
   'ورقة': 'BOTTOM_SHEET', 'bottomsheet': 'BOTTOM_SHEET',
   'تبويب': 'TAB_LAYOUT', 'tablayout': 'TAB_LAYOUT',
+  'رابط': 'OPEN_URL', 'openurl': 'OPEN_URL',
+  'شارك': 'SHARE_TEXT', 'sharetext': 'SHARE_TEXT',
+  'اتصل': 'DIAL', 'dial': 'DIAL',
+  'انسخ': 'CLIP_COPY', 'clipcopy': 'CLIP_COPY',
+  'أرسل_تنبيه': 'SEND_NOTIFICATION', 'notify': 'SEND_NOTIFICATION',
 };
 
 function isKeyword(text) {

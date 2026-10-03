@@ -513,6 +513,20 @@ function android_من_نارمين(ملف_narmin, اسم_مشروع, خيارا�
   }
 
   // 5) ولّد الملفات من AST نارمين
+  // فحص استخدام التنبيهات → إضافة الإذن تلقائياً
+  const hasNotification = (function scan(items) {
+    for (const it of items) {
+      if (it.type === 'SendNotification') return true;
+      if (it.children && scan(it.children)) return true;
+      if (it.handler && it.handler.body && scan(it.handler.body)) return true;
+      if (it.template && scan(it.template)) return true;
+    }
+    return false;
+  })(screens.flatMap(sc => sc.children));
+  if (hasNotification && !permissions.includes('android.permission.POST_NOTIFICATIONS')) {
+    permissions.push('android.permission.POST_NOTIFICATIONS');
+  }
+
   const { generateMultiProject } = require('../codegen/android');
   const gen = generateMultiProject(screens, اسم_مشروع, مسار, { imports: [], deps: [], permissions: [] });
 

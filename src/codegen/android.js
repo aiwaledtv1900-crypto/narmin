@@ -260,6 +260,50 @@ function handlerToKotlin(block, indent, stateVars) {
     } else if (stmt.type === N.SNACKBAR) {
       const text = exprToKotlin(stmt.text, stateVars);
       lines.push(`${indent}com.google.android.material.snackbar.Snackbar.make(findViewById(android.R.id.content), ${text}.toString(), com.google.android.material.snackbar.Snackbar.LENGTH_SHORT).show()`);
+    } else if (stmt.type === N.OPEN_URL) {
+      const url = exprToKotlin(stmt.url, stateVars);
+      lines.push(`${indent}startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(${url}.toString())))`);
+    } else if (stmt.type === N.SHARE_TEXT) {
+      const text = exprToKotlin(stmt.text, stateVars);
+      lines.push(`${indent}run {`);
+      lines.push(`${indent}    val sendIntent = android.content.Intent().apply {`);
+      lines.push(`${indent}        action = android.content.Intent.ACTION_SEND`);
+      lines.push(`${indent}        putExtra(android.content.Intent.EXTRA_TEXT, ${text}.toString())`);
+      lines.push(`${indent}        type = "text/plain"`);
+      lines.push(`${indent}    }`);
+      lines.push(`${indent}    startActivity(android.content.Intent.createChooser(sendIntent, "شارك عبر"))`);
+      lines.push(`${indent}}`);
+    } else if (stmt.type === N.DIAL) {
+      const phone = exprToKotlin(stmt.phone, stateVars);
+      lines.push(`${indent}startActivity(android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:" + ${phone}.toString())))`);
+    } else if (stmt.type === N.CLIP_COPY) {
+      const text = exprToKotlin(stmt.text, stateVars);
+      lines.push(`${indent}run {`);
+      lines.push(`${indent}    val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager`);
+      lines.push(`${indent}    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("narmin", ${text}.toString()))`);
+      lines.push(`${indent}    android.widget.Toast.makeText(this, "تم النسخ", android.widget.Toast.LENGTH_SHORT).show()`);
+      lines.push(`${indent}}`);
+    } else if (stmt.type === N.SEND_NOTIFICATION) {
+      const title = exprToKotlin(stmt.title, stateVars);
+      const body = exprToKotlin(stmt.body, stateVars);
+      lines.push(`${indent}run {`);
+      lines.push(`${indent}    val nm = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager`);
+      lines.push(`${indent}    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {`);
+      lines.push(`${indent}        val ch = android.app.NotificationChannel("narmin_ch", "Narmin", android.app.NotificationManager.IMPORTANCE_DEFAULT)`);
+      lines.push(`${indent}        nm.createNotificationChannel(ch)`);
+      lines.push(`${indent}    }`);
+      lines.push(`${indent}    val notif = androidx.core.app.NotificationCompat.Builder(this, "narmin_ch")`);
+      lines.push(`${indent}        .setSmallIcon(android.R.drawable.ic_dialog_info)`);
+      lines.push(`${indent}        .setContentTitle(${title}.toString())`);
+      lines.push(`${indent}        .setContentText(${body}.toString())`);
+      lines.push(`${indent}        .setPriority(androidx.core.app.NotificationCompat.PRIORITY_DEFAULT)`);
+      lines.push(`${indent}        .build()`);
+      lines.push(`${indent}    if (android.os.Build.VERSION.SDK_INT >= 33) {`);
+      lines.push(`${indent}        if (androidx.core.app.ActivityCompat.checkSelfPermission(this, "android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {`);
+      lines.push(`${indent}            androidx.core.app.ActivityCompat.requestPermissions(this, arrayOf("android.permission.POST_NOTIFICATIONS"), 1)`);
+      lines.push(`${indent}        } else { nm.notify(1, notif) }`);
+      lines.push(`${indent}    } else { nm.notify(1, notif) }`);
+      lines.push(`${indent}}`);
     }
   }
   lines.push(`${indent}updateUI()`);

@@ -111,6 +111,28 @@ class Parser {
       this.advance();
       return AST.Snackbar(this.parseExpression());
     }
+    if (this.checkKw('OPEN_URL')) {
+      this.advance();
+      return AST.OpenUrl(this.parseExpression());
+    }
+    if (this.checkKw('SHARE_TEXT')) {
+      this.advance();
+      return AST.ShareText(this.parseExpression());
+    }
+    if (this.checkKw('DIAL')) {
+      this.advance();
+      return AST.Dial(this.parseExpression());
+    }
+    if (this.checkKw('CLIP_COPY')) {
+      this.advance();
+      return AST.ClipCopy(this.parseExpression());
+    }
+    if (this.checkKw('SEND_NOTIFICATION')) {
+      this.advance();
+      const title = this.parseExpression();
+      const body = this.parseExpression();
+      return AST.SendNotification(title, body);
+    }
     if (this.checkKw('RETURN')) return this.parseReturn();
     if (this.checkKw('BREAK')) { this.advance(); return AST.Break(); }
     if (this.checkKw('CONTINUE')) { this.advance(); return AST.Continue(); }
