@@ -270,6 +270,12 @@ class Interpreter {
           }
         }
       }
+    } else if (node.type === N.SNACKBAR) {
+      this.output(`${pad}  🍫 سنيكر: ${this.eval(node.text, env)}`);
+    } else if (node.type === N.BOTTOM_SHEET) {
+      this.output(`${pad}  📋 ورقة: ${this.eval(node.title, env)}`);
+    } else if (node.type === N.TAB_LAYOUT) {
+      this.output(`${pad}  📑 تبويبات: ${node.tabs.length}`);
     } else if (node.type === N.STATE_DECL) {
       // لو محفوظة: اقرأ من التخزين أولاً
       let value;

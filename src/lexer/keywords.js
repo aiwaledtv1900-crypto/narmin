@@ -60,6 +60,9 @@ const KEYWORDS = {
   'استيراد_كوتلن': 'KOTLIN_IMPORT', 'kotlinimport': 'KOTLIN_IMPORT',
   'مكتبة': 'GRADLE_DEP', 'library': 'GRADLE_DEP',
   'اذن': 'ANDROID_PERMISSION', 'permission': 'ANDROID_PERMISSION',
+  'سنيكر': 'SNACKBAR', 'snackbar': 'SNACKBAR',
+  'ورقة': 'BOTTOM_SHEET', 'bottomsheet': 'BOTTOM_SHEET',
+  'تبويب': 'TAB_LAYOUT', 'tablayout': 'TAB_LAYOUT',
 };
 
 function isKeyword(text) {

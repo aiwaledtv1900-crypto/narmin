@@ -257,6 +257,9 @@ function handlerToKotlin(block, indent, stateVars) {
       lines.push(`${indent}    .show()`);
     } else if (stmt.type === N.BACK) {
       lines.push(`${indent}finish()`);
+    } else if (stmt.type === N.SNACKBAR) {
+      const text = exprToKotlin(stmt.text, stateVars);
+      lines.push(`${indent}com.google.android.material.snackbar.Snackbar.make(findViewById(android.R.id.content), ${text}.toString(), com.google.android.material.snackbar.Snackbar.LENGTH_SHORT).show()`);
     }
   }
   lines.push(`${indent}updateUI()`);
@@ -445,6 +448,18 @@ function buildXml(children, indent = '        ') {
       lines.push(`${indent}    android:orientation="vertical"`);
       lines.push(`${indent}    android:layout_marginTop="8dp" />`);
       child._id = id;
+    } else if (child.type === N.TAB_LAYOUT) {
+      const id = nextId();
+      lines.push(`${indent}<com.google.android.material.tabs.TabLayout`);
+      lines.push(`${indent}    android:id="@+id/${id}"`);
+      lines.push(`${indent}    android:layout_width="match_parent"`);
+      lines.push(`${indent}    android:layout_height="wrap_content"`);
+      lines.push(`${indent}    android:layout_marginTop="8dp"`);
+      lines.push(`${indent}    android:layout_marginBottom="8dp"`);
+      lines.push(`${indent}    app:tabIndicatorColor="#1A237E"`);
+      lines.push(`${indent}    app:tabSelectedTextColor="#1A237E"`);
+      lines.push(`${indent}    app:tabTextColor="#757575" />`);
+      child._id = id;
     }
   }
   return lines.join('\n');
@@ -482,6 +497,14 @@ function buildKotlinBody(children, indent, stateVars) {
       if (inner) lines.push(inner);
     } else if (child.type === N.KOTLIN_RAW) {
       lines.push(`${indent}${child.code}`);
+    } else if (child.type === N.TAB_LAYOUT) {
+      lines.push(`${indent}run {`);
+      lines.push(`${indent}    val tabLayout = findViewById<com.google.android.material.tabs.TabLayout>(R.id.${child._id})`);
+      for (const tab of child.tabs) {
+        const tabText = staticString(tab) || 'تبويب';
+        lines.push(`${indent}    tabLayout.addTab(tabLayout.newTab().setText("${escapeXml(tabText)}"))`);
+      }
+      lines.push(`${indent}}`);
     }
   }
   return lines.filter(Boolean).join('\n');

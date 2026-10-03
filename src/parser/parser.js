@@ -107,6 +107,10 @@ class Parser {
       this.advance();
       return AST.Back();
     }
+    if (this.checkKw('SNACKBAR')) {
+      this.advance();
+      return AST.Snackbar(this.parseExpression());
+    }
     if (this.checkKw('RETURN')) return this.parseReturn();
     if (this.checkKw('BREAK')) { this.advance(); return AST.Break(); }
     if (this.checkKw('CONTINUE')) { this.advance(); return AST.Continue(); }
@@ -329,6 +333,35 @@ class Parser {
     if (this.checkKw('UI_DONE')) {
       this.advance();
       return AST.UIDone();
+    }
+    if (this.checkKw('BOTTOM_SHEET')) {
+      this.advance();
+      const title = this.parseExpression();
+      this.expect(T.LBRACE, "متوقع '{'");
+      const items = [];
+      this.skipNewlines();
+      while (!this.check(T.RBRACE) && !this.check(T.EOF)) {
+        items.push(this.parseExpression());
+        this.skipNewlines();
+        if (!this.match(T.COMMA)) break;
+        this.skipNewlines();
+      }
+      this.expect(T.RBRACE, "متوقع '}'");
+      return AST.BottomSheet(title, items);
+    }
+    if (this.checkKw('TAB_LAYOUT')) {
+      this.advance();
+      this.expect(T.LBRACE, "متوقع '{'");
+      const tabs = [];
+      this.skipNewlines();
+      while (!this.check(T.RBRACE) && !this.check(T.EOF)) {
+        tabs.push(this.parseExpression());
+        this.skipNewlines();
+        if (!this.match(T.COMMA)) break;
+        this.skipNewlines();
+      }
+      this.expect(T.RBRACE, "متوقع '}'");
+      return AST.TabLayout(tabs);
     }
     if (this.checkKw('UI_LIST')) {
       this.advance();
