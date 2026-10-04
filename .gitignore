@@ -55,3 +55,4 @@ t*.py
 w*.py
 x*.py
 s*.py
+fix_cli.py

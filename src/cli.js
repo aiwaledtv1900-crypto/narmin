@@ -59,7 +59,15 @@ if (cmd === 'نفّذ' && args[1]) {
   return;
 }
 
-if (!cmd || cmd === 'repl') {
+// narm بلا وسيط → الوضع الطبيعي (للمستخدم العادي)
+if (!cmd) {
+  const { startNaturalRepl } = require('./natural/repl');
+  startNaturalRepl();
+  return;
+}
+
+// narm repl → REPL البرمجة (للمتقدمين)
+if (cmd === 'repl') {
   const { startRepl } = require('./repl');
   startRepl();
   return;
