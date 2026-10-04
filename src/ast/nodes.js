@@ -60,6 +60,8 @@ const NodeType = {
   CONTINUE: 'ContinueStmt',
   IMPORT: 'ImportStmt',
   BLOCK: 'Block',
+  TRY: 'TryStmt',
+  THROW: 'ThrowStmt',
 
   // واجهات أندرويد
   SCREEN: 'Screen',
@@ -146,6 +148,8 @@ const AST = {
   Continue: () => ({ type: NodeType.CONTINUE }),
   Import: (names, from, alias) => ({ type: NodeType.IMPORT, names, from, alias }),
   Block: (body) => ({ type: NodeType.BLOCK, body }),
+  Try: (tryBlock, catchParam, catchBlock, finallyBlock) => ({ type: NodeType.TRY, tryBlock, catchParam, catchBlock, finallyBlock }),
+  Throw: (arg) => ({ type: NodeType.THROW, arg }),
 
   // واجهات
   Screen: (name, children) => ({ type: NodeType.SCREEN, name, children }),

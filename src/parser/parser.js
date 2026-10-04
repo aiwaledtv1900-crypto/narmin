@@ -150,6 +150,8 @@ class Parser {
       const body = this.parseExpression();
       return AST.SendNotification(title, body);
     }
+    if (this.checkKw('TRY')) return this.parseTry();
+    if (this.checkKw('THROW')) return this.parseThrow();
     if (this.checkKw('RETURN')) return this.parseReturn();
     if (this.checkKw('BREAK')) { this.advance(); return AST.Break(); }
     if (this.checkKw('CONTINUE')) { this.advance(); return AST.Continue(); }
@@ -574,6 +576,48 @@ class Parser {
       Object.assign(props, this.parseProps());
     }
     return AST.AppIcon(props);
+  }
+
+  // ═══ جرب / التقط / اخيرا ═══
+  parseTry() {
+    this.advance(); // جرب
+    const tryBlock = this.parseBlock();
+    let catchParam = null;
+    let catchBlock = null;
+    let finallyBlock = null;
+
+    this.skipNewlines();
+    if (this.checkKw('CATCH')) {
+      this.advance();
+      // التقط "اسم" { ... } أو التقط { ... }
+      if (this.check(T.IDENT)) {
+        catchParam = this.advance().value;
+      } else if (this.check(T.KEYWORD)) {
+        catchParam = this.advance().value;
+      } else if (this.check(T.STRING)) {
+        catchParam = this.advance().value;
+      }
+      catchBlock = this.parseBlock();
+      this.skipNewlines();
+    }
+
+    if (this.checkKw('FINALLY')) {
+      this.advance();
+      finallyBlock = this.parseBlock();
+    }
+
+    return AST.Try(tryBlock, catchParam, catchBlock, finallyBlock);
+  }
+
+  // ═══ ارم (throw) ═══
+  parseThrow() {
+    this.advance();
+    let arg = null;
+    if (!this.check(T.NEWLINE) && !this.check(T.SEMICOLON) &&
+        !this.check(T.RBRACE) && !this.check(T.EOF)) {
+      arg = this.parseExpression();
+    }
+    return AST.Throw(arg);
   }
 
   parseBlock() {

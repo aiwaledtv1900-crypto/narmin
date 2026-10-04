@@ -5,6 +5,11 @@ class ReturnSignal {
   constructor(value) { this.value = value; }
 }
 
+// إشارة ارم (throw)
+class ThrowSignal {
+  constructor(value) { this.value = value; }
+}
+
 class BreakSignal {}
 class ContinueSignal {}
 
@@ -18,4 +23,4 @@ class NarminError extends Error {
   }
 }
 
-module.exports = { ReturnSignal, BreakSignal, ContinueSignal, NarminError };
+module.exports = { ReturnSignal, BreakSignal, ContinueSignal, NarminError, ThrowSignal };

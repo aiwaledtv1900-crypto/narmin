@@ -7,7 +7,7 @@ const {
   makeFunction,
 } = require('./values');
 const {
-  ReturnSignal, BreakSignal, ContinueSignal, NarminError,
+  ReturnSignal, BreakSignal, ContinueSignal, NarminError, ThrowSignal,
 } = require('./signals');
 
 class Interpreter {
@@ -164,6 +164,8 @@ class Interpreter {
       case N.FOR: return this.execFor(node, env);
       case N.FUNCTION: return this.execFunction(node, env);
       case N.RETURN: return this.execReturn(node, env);
+      case N.TRY: return this.execTry(node, env);
+      case N.THROW: return this.execThrow(node, env);
       case N.BREAK: throw new BreakSignal();
       case N.CONTINUE: throw new ContinueSignal();
       case N.BLOCK: return this.execBlock(node, env);
@@ -317,6 +319,60 @@ class Interpreter {
       const tag = node.persistent ? '💾 محفوظ' : '📦 حالة';
       this.output(`${pad}  ${tag}: ${node.name} = ${stringify(value)}`);
     }
+  }
+
+  // ═══ جرب / التقط / اخيرا ═══
+  execTry(node, env) {
+    let caught = null;
+    let caughtError = null;
+
+    try {
+      this.exec(node.tryBlock, env);
+    } catch (e) {
+      // ReturnSignal/BreakSignal/ContinueSignal تمر مباشرة
+      if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal) {
+        // لكن اخيرا يجب أن تنفذ
+        if (node.finallyBlock) {
+          try { this.exec(node.finallyBlock, env); } catch (_) {}
+        }
+        throw e;
+      }
+      // استثناء حقيقي — نلتقطه
+      caught = true;
+      if (e instanceof ThrowSignal) {
+        caughtError = e.value;
+      } else {
+        caughtError = e.message || String(e);
+      }
+    }
+
+    // نفّذ التقط
+    if (caught && node.catchBlock) {
+      const catchEnv = env.child();
+      if (node.catchParam) {
+        catchEnv.defineLocal(node.catchParam, caughtError);
+      }
+      try {
+        this.exec(node.catchBlock, catchEnv);
+      } catch (e2) {
+        // أخطاء داخل التقط — نفّذ اخيرا ثم ارم
+        if (node.finallyBlock) {
+          try { this.exec(node.finallyBlock, env); } catch (_) {}
+        }
+        throw e2;
+      }
+    }
+
+    // نفّذ اخيرا دائماً
+    if (node.finallyBlock) {
+      this.exec(node.finallyBlock, env);
+    }
+  }
+
+  // ═══ ارم (throw) ═══
+  execThrow(node, env) {
+    const value = node.arg ? this.eval(node.arg, env) : null;
+    throw new ThrowSignal(value);
   }
 
   execBlock(node, env) {
