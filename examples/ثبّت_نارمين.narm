@@ -1,6 +1,6 @@
 متغير ملف = ضم(
   مسار_الرئيسية(),
-  "DEV/apps_building/NarminApp/app/build/outputs/apk/debug/app-debug.apk"
+  "عصام القاضي/apps_building/NarminApp/app/build/outputs/apk/debug/app-debug.apk"
 )
 
 اذا ليس موجود(ملف) {

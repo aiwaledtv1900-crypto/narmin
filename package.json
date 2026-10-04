@@ -31,13 +31,13 @@
     "apk",
     "reverse-engineering"
   ],
-  "author": "DEV",
+  "author": "عصام القاضي",
   "license": "MIT",
   "engines": {
     "node": ">=18"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/DEV/narmin"
+    "url": "https://github.com/aiwaledtv1900-crypto/narmin"
   }
 }
