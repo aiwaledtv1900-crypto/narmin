@@ -219,7 +219,10 @@ class Parser {
 
   parseFunction() {
     this.advance();
-    const name = this.expect(T.IDENT, 'متوقع اسم الدالة').value;
+    let name;
+    if (this.check(T.IDENT)) name = this.advance().value;
+    else if (this.check(T.KEYWORD)) name = this.advance().value;
+    else this.error('متوقع اسم الدالة');
     this.expect(T.LPAREN, "متوقع '('");
     this.skipNewlines();
     const params = [];
@@ -725,6 +728,12 @@ class Parser {
     if (this.check(T.LBRACKET)) return this.parseArray();
     if (this.check(T.LBRACE)) return this.parseObject();
     if (this.checkKw('IF')) return this.parseIfExpr();
+
+    // كلمات مفتاحية كمعرّفات (مثل: مربع، متوسط، كامل)
+    if (this.check(T.KEYWORD)) {
+      const t = this.advance();
+      return AST.Identifier(t.value);
+    }
 
     this.error('تعبير غير متوقع');
   }

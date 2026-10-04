@@ -56,3 +56,5 @@ w*.py
 x*.py
 s*.py
 fix_cli.py
+fix_fn.py
+fix_cli.py
