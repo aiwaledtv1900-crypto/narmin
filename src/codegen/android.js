@@ -348,7 +348,10 @@ function handlerToKotlin(block, indent, stateVars, parentLocalVars = null) {
       lines.push(handlerToKotlin({ body: stmt.tryBlock.body }, indent + '    ', stateVars));
       if (stmt.catchBlock) {
         const param = stmt.catchParam || 'e';
-        lines.push(`${indent}} catch (${param}: Exception) {`);
+        const rawName = '__ex_' + param;
+        lines.push(`${indent}} catch (${rawName}: Exception) {`);
+        lines.push(`${indent}    val ${param} = ${rawName}.message ?: ${rawName}.toString()`);
+
         lines.push(handlerToKotlin({ body: stmt.catchBlock.body }, indent + '    ', stateVars));
       }
       lines.push(`${indent}}`);

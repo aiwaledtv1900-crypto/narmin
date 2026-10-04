@@ -63,3 +63,4 @@ eh*.py
 test_*.js
 imp*.py
 nat*.py
+fix_*.py
