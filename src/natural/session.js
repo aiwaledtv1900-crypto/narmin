@@ -13,6 +13,11 @@ class NaturalSession {
     this.textColor = null;
     this.lastFailed = null;    // آخر أمر فاشل
     this.lastSuggestion = null; // آخر اقتراح
+    this.icon = null;
+    this.permissions = [];
+    this.libraries = [];
+    this.topBar = null;
+    this.variables = [];
   }
 
   // ═══ 1) تطبيع الحروف ═══
@@ -328,6 +333,67 @@ class NaturalSession {
       return `✓ أُلغي`;
     }
 
+    // PARSEICON_MARKER
+    let mI = t.match(/^(?:ايقونة|أيقونة|icon)\s+(.+)$/);
+    if (mI) {
+      const rest = mI[1].trim();
+      let props = {};
+      const textM = rest.match(/["'«»]([^"'«»]+)["'«»]/);
+      const colorM = rest.match(/لون\s+["'«»]([^"'«»]+)["'«»]/);
+      const shapeM = rest.match(/شكل\s+["'«»]([^"'«»]+)["'«»]/);
+      if (textM) props.text = textM[1];
+      if (colorM) props.color = colorM[1];
+      if (shapeM) props.shape = shapeM[1];
+      if (!props.text) props.text = this.appName;
+      if (!props.color) props.color = 'بنفسجي عميق';
+      if (!props.shape) props.shape = 'مربع_مع_حواف';
+      this.icon = props;
+      return '✓ أيقونة: "' + props.text + '" [' + props.color + ']';
+    }
+
+    // PARSEPERM_MARKER
+    let mP = t.match(/^(?:صلاحية|صلاحيات|permission)\s+["'«»]([^"'«»]+)["'«»]/);
+    if (mP) {
+      const perm = mP[1].trim();
+      if (!this.permissions.includes(perm)) this.permissions.push(perm);
+      return '✓ صلاحية: "' + perm + '"';
+    }
+
+    // PARSELIB_MARKER
+    let mL = t.match(/^(?:مكتبة|library)\s+["'«»]([^"'«»]+)["'«»]/);
+    if (mL) {
+      const lib = mL[1].trim();
+      if (!this.libraries.includes(lib)) this.libraries.push(lib);
+      return '✓ مكتبة: "' + lib + '"';
+    }
+
+    // PARSEBAR_MARKER
+    let mB = t.match(/^(?:شريط_علوي|شريط علوي|topbar)\s+(.+)$/);
+    if (mB) {
+      const rest = mB[1].trim();
+      let props = { text: '', color: 'بنفسجي عميق', size: '70' };
+      const textM = rest.match(/["'«»]([^"'«»]+)["'«»]/);
+      const colorM = rest.match(/لون\s+["'«»]([^"'«»]+)["'«»]/);
+      const sizeM = rest.match(/حجم\s+(\d+)/);
+      if (textM) props.text = textM[1];
+      if (colorM) props.color = colorM[1];
+      if (sizeM) props.size = sizeM[1];
+      if (!props.text) props.text = this.appName;
+      this.topBar = props;
+      return '✓ شريط علوي: "' + props.text + '" [' + props.color + ']';
+    }
+
+    // PARSEVAR_MARKER
+    let mV = t.match(/^(?:محفوظ|حالة|state|saved)\s+(\S+)(?:\s*=\s*(.+))?$/);
+    if (mV) {
+      const name = mV[1].trim();
+      const value = mV[2] ? mV[2].trim() : '';
+      const existing = this.variables.find(v => v.name === name);
+      if (existing) existing.value = value;
+      else this.variables.push({ name, value, persistent: true });
+      return '✓ محفوظ: ' + name;
+    }
+
     // ═══ اعرض ═══
     if (/^(?:اعرض|عرض|حالة|الكود|ارني|أرني|what)$/.test(t)) {
       return this.renderState();
@@ -380,8 +446,11 @@ class NaturalSession {
 
   // ═══ 5) parse يدعم أوامر متعددة ═══
   parse(text) {
-    // افحص إن كان "تعديل X" — لا تقسّم
     const trimmed = String(text).trim();
+    // DONT_SPLIT — لا تقسّم هذه الأوامر
+    if (/^(?:ايقونة|أيقونة|icon|صلاحية|صلاحيات|permission|مكتبة|library|شريط_علوي|شريط علوي|topbar|محفوظ|حالة|state|تعديل|عدّل|عدل|صحّح|صحح|نعم|صح|اجل|موافق|yes|y|لا|خطأ|خطا|no|n)\s/i.test(trimmed) || /^(?:نعم|لا|yes|no)$/i.test(trimmed)) {
+      return this.parseOne(trimmed);
+    }
     if (/^(?:تعديل|عدّل|عدل|صحّح|صحح)\s+/.test(trimmed)) {
       return this.parseOne(trimmed);
     }
@@ -564,52 +633,118 @@ class NaturalSession {
 
   // ═══ توليد الكود ═══
   generateNarmCode() {
+    const lines = [];
+
+    // 1) التوجيهات (#@)
     const header = [];
     if (this.theme) header.push(`#@النمط: ${this.theme}`);
     if (this.buttonColor) header.push(`#@الزر: ${this.buttonColor}`);
     if (this.textColor) header.push(`#@النص: ${this.textColor}`);
-    const headerStr = header.length ? header.join('\n') + '\n\n' : '';
-
-    if (this.rawCode) return headerStr + this.rawCode;
-
-    const lines = [];
-    if (headerStr) lines.push(headerStr.trim());
-    lines.push(`شاشة "${this.appName}" {`);
-    lines.push(`  عنوان "${this.appName}"`);
-
-    for (const [name, info] of this.stateVars) {
-      let init = '""';
-      if (info.type === 'Double') init = '0';
-      else if (info.type === 'Boolean') init = 'خطأ';
-      else if (info.type === 'MutableList') init = '[]';
-      lines.push(`  محفوظ ${name} = ${init}`);
+    if (header.length) {
+      lines.push(header.join('\n'));
+      lines.push('');
     }
 
-    if (this.stateVars.size > 0) lines.push(`  مسافة 8`);
+    // 2) الأيقونة
+    if (this.icon) {
+      lines.push(`ايقونة ( نص "${this.icon.text}" لون "${this.icon.color}" شكل "${this.icon.shape}" )`);
+      lines.push('');
+    }
 
+    // 3) الصلاحيات
+    if (this.permissions.length > 0) {
+      for (const perm of this.permissions) {
+        lines.push(`صلاحية "${perm}"`);
+      }
+      lines.push('');
+    }
+
+    // 4) المكتبات
+    if (this.libraries.length > 0) {
+      for (const lib of this.libraries) {
+        lines.push(`مكتبة "${lib}"`);
+      }
+      lines.push('');
+    }
+
+    // 5) الأنماط المخصصة
+    if (this.stateVars.size > 0) {
+      for (const [name, info] of this.stateVars) {
+        if (info.type === 'String' && info.init) {
+          // حالة نصية — قد تكون نمط
+        }
+      }
+    }
+
+    // 6) الشاشة
+    lines.push(`شاشة "${this.appName}"`);
+
+    // 7) الشريط العلوي
+    if (this.topBar) {
+      lines.push(`  الشريط_العلوي ( لون "${this.topBar.color}" حجم ${this.topBar.size} نص "${this.topBar.text}" )`);
+      lines.push('');
+    }
+
+    // 8) المتغيرات المحفوظة
+    for (const v of this.variables) {
+      const val = v.value || '""';
+      lines.push(`  محفوظ ${v.name} = ${val}`);
+    }
+
+    // 9) الحالات من stateVars
+    for (const [name, info] of this.stateVars) {
+      if (!this.variables.find(v => v.name === name)) {
+        let init = '""';
+        if (info.type === 'Double') init = '0';
+        else if (info.type === 'Boolean') init = 'خطأ';
+        else if (info.type === 'MutableList') init = '[]';
+        lines.push(`  محفوظ ${name} = ${init}`);
+      }
+    }
+
+    if (this.variables.length > 0 || this.stateVars.size > 0) {
+      lines.push('  مسافة 8');
+    }
+
+    // 10) العناصر
     for (const el of this.elements) {
-      if (el.type === 'heading') lines.push(`  عنوان "${el.text}"`);
-      else if (el.type === 'text') lines.push(`  كتابة "${el.text}"`);
+      if (el.type === 'heading') {
+        const colorRef = el.colorRef ? ` ( لون "${el.colorRef}" )` : '';
+        lines.push(`  عنوان "${el.text}"${colorRef}`);
+      }
+      else if (el.type === 'text') {
+        const colorRef = el.colorRef ? ` ( لون "${el.colorRef}" )` : '';
+        lines.push(`  كتابة "${el.text}"${colorRef}`);
+      }
       else if (el.type === 'textfield') {
-        lines.push(`  حقل "${el.hint}"${el.binding ? ' كـ ' + el.binding : ''}`);
+        const binding = el.binding ? ` كـ ${el.binding}` : '';
+        lines.push(`  حقل "${el.hint}"${binding}`);
       }
       else if (el.type === 'button') {
-        lines.push(`  زر "${el.text}" عند_الضغط {`);
+        lines.push(`  زر "${el.text}" عند_الضغط`);
         lines.push(`    تنبيه "ضغطت: ${el.text}"`);
-        lines.push(`  }`);
+        lines.push(`  نهاية`);
       }
       else if (el.type === 'list') {
-        lines.push(`  قائمة ${el.source} {`);
+        lines.push(`  قائمة ${el.source}`);
         lines.push(`    كتابة العنصر`);
-        lines.push(`  }`);
+        lines.push(`  نهاية`);
       }
-      else if (el.type === 'checkbox') lines.push(`  اختيار "${el.text}"`);
-      else if (el.type === 'switch') lines.push(`  مفتاح "${el.text}"`);
-      else if (el.type === 'spacer') lines.push(`  مسافة ${el.size}`);
-      else if (el.type === 'divider') lines.push(`  فاصل`);
+      else if (el.type === 'checkbox') {
+        lines.push(`  اختيار "${el.text}"`);
+      }
+      else if (el.type === 'switch') {
+        lines.push(`  مفتاح "${el.text}"`);
+      }
+      else if (el.type === 'spacer') {
+        lines.push(`  مسافة ${el.size}`);
+      }
+      else if (el.type === 'divider') {
+        lines.push(`  فاصل`);
+      }
     }
 
-    lines.push(`}`);
+    lines.push('نهاية');
     return lines.join('\n');
   }
 
