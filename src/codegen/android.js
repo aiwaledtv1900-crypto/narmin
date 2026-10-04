@@ -343,6 +343,23 @@ function handlerToKotlin(block, indent, stateVars, parentLocalVars = null) {
       } else {
         lines.push(`${indent}${keyword} ${stmt.name}: Any? = null`);
       }
+    } else if (stmt.type === N.TRY) {
+      lines.push(`${indent}try {`);
+      lines.push(handlerToKotlin({ body: stmt.tryBlock.body }, indent + '    ', stateVars));
+      if (stmt.catchBlock) {
+        const param = stmt.catchParam || 'e';
+        lines.push(`${indent}} catch (${param}: Exception) {`);
+        lines.push(handlerToKotlin({ body: stmt.catchBlock.body }, indent + '    ', stateVars));
+      }
+      lines.push(`${indent}}`);
+      if (stmt.finallyBlock) {
+        lines.push(`${indent}finally {`);
+        lines.push(handlerToKotlin({ body: stmt.finallyBlock.body }, indent + '    ', stateVars));
+        lines.push(`${indent}}`);
+      }
+    } else if (stmt.type === N.THROW) {
+      const arg = stmt.arg ? exprToKotlin(stmt.arg, stateVars) : '"خطأ"';
+      lines.push(`${indent}throw Exception(${arg}.toString())`);
     } else if (stmt.type === N.EXPR_STMT) {
       lines.push(`${indent}${exprToKotlin(stmt.expr, stateVars, LOCAL_VARS)}`);
     } else if (stmt.type === N.IF) {
@@ -739,13 +756,25 @@ function buildListItemKotlin(template, stateVars, itemVar = 'العنصر', inde
 }
 
 // نسخة أنظف: نبني العنصر كاملاً كسلسلة Kotlin
-function buildListItemBody(template, stateVars, itemVarName, indent = '                ') {
+function buildListItemBody(template, stateVars, itemVarName, indent) {
   const lines = [];
-  const hasText = template.some(c => c.type === N.UI_TEXT || c.type === N.UI_HEADING);
-  const hasButton = template.some(c => c.type === N.UI_BUTTON);
-  const asRow = hasText && hasButton;
+  const flat = [];
+  // فك البطاقات إلى محتوى داخلي
+  function walk(items) {
+    for (const it of items) {
+      if (it.type === N.UI_CARD) {
+        walk(it.children);
+      } else {
+        flat.push(it);
+      }
+    }
+  }
+  walk(template);
 
-  // بطاقة لكل عنصر
+  const hasText = flat.some(c => c.type === N.UI_TEXT || c.type === N.UI_HEADING);
+  const hasButton = flat.some(c => c.type === N.UI_BUTTON);
+
+  // بطاقة
   lines.push(`${indent}val card = com.google.android.material.card.MaterialCardView(this)`);
   lines.push(`${indent}val cardLp = android.widget.LinearLayout.LayoutParams(`);
   lines.push(`${indent}    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,`);
@@ -757,59 +786,31 @@ function buildListItemBody(template, stateVars, itemVarName, indent = '         
   lines.push(`${indent}card.cardElevation = 4f`);
   lines.push(`${indent}card.setCardBackgroundColor(android.graphics.Color.WHITE)`);
 
-  // الحاوية الداخلية
+  // حاوية داخلية أفقية
   lines.push(`${indent}val inner = android.widget.LinearLayout(this).apply {`);
-  if (asRow) {
-    lines.push(`${indent}    orientation = android.widget.LinearLayout.HORIZONTAL`);
-  } else {
-    lines.push(`${indent}    orientation = android.widget.LinearLayout.VERTICAL`);
-  }
+  lines.push(`${indent}    orientation = android.widget.LinearLayout.HORIZONTAL`);
   lines.push(`${indent}    setPadding(40, 40, 40, 40)`);
   lines.push(`${indent}    gravity = android.view.Gravity.CENTER_VERTICAL`);
   lines.push(`${indent}}`);
 
-  for (const child of template) {
-    if (child.type === N.UI_DONE) {
-      // CheckBox للإتمام
-      lines.push(`${indent}val cbItem = com.google.android.material.checkbox.MaterialCheckBox(this).apply {`);
-      lines.push(`${indent}    isChecked = ${itemVarName}.startsWith("✓ ")`);
-      lines.push(`${indent}    setOnCheckedChangeListener { _, checked ->`);
-      lines.push(`${indent}        val idx = STATE_مهام.indexOf(${itemVarName})`);
-      lines.push(`${indent}        if (idx >= 0) {`);
-      lines.push(`${indent}            if (checked && !${itemVarName}.startsWith("✓ ")) {`);
-      lines.push(`${indent}                STATE_مهام[idx] = "✓ " + ${itemVarName}`);
-      lines.push(`${indent}            } else if (!checked && ${itemVarName}.startsWith("✓ ")) {`);
-      lines.push(`${indent}                STATE_مهام[idx] = ${itemVarName}.substring(2)`);
-      lines.push(`${indent}            }`);
-      lines.push(`${indent}            savePref("مهام", STATE_مهام)`);
-      lines.push(`${indent}            updateUI()`);
-      lines.push(`${indent}        }`);
-      lines.push(`${indent}    }`);
-      lines.push(`${indent}}`);
-      lines.push(`${indent}inner.addView(cbItem)`);
-    } else if (child.type === N.UI_TEXT || child.type === N.UI_HEADING) {
+  // المحتوى
+  for (const child of flat) {
+    if (child.type === N.UI_TEXT || child.type === N.UI_HEADING) {
       const kt = exprToKotlin(child.expr || child.text, stateVars);
       lines.push(`${indent}val tvItem = android.widget.TextView(this).apply {`);
       lines.push(`${indent}    text = ${kt}.replace("✓ ", "")`);
-      lines.push(`${indent}    textSize = 17f`);
+      lines.push(`${indent}    textSize = 16f`);
       lines.push(`${indent}    setTextColor(android.graphics.Color.parseColor("#212121"))`);
-      lines.push(`${indent}    if (${itemVarName}.startsWith("✓ ")) {`);
-      lines.push(`${indent}        paintFlags = paintFlags or android.graphics.Paint.STRIKE_THRU_TEXT_FLAG`);
-      lines.push(`${indent}        setTextColor(android.graphics.Color.parseColor("#9E9E9E"))`);
-      lines.push(`${indent}    }`);
-      if (asRow) {
-        lines.push(`${indent}    layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)`);
-      }
+      lines.push(`${indent}    layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)`);
       lines.push(`${indent}}`);
       lines.push(`${indent}inner.addView(tvItem)`);
     } else if (child.type === N.UI_BUTTON) {
       const ktText = exprToKotlin(child.text, stateVars);
       lines.push(`${indent}val btnItem = com.google.android.material.button.MaterialButton(this).apply {`);
       lines.push(`${indent}    text = ${ktText}`);
-      lines.push(`${indent}    textSize = 14f`);
+      lines.push(`${indent}    textSize = 13f`);
       lines.push(`${indent}    setTextColor(android.graphics.Color.WHITE)`);
       lines.push(`${indent}    setBackgroundColor(android.graphics.Color.parseColor("#E53935"))`);
-      lines.push(`${indent}    setPadding(30, 0, 30, 0)`);
       lines.push(`${indent}}`);
       lines.push(`${indent}btnItem.setOnClickListener {`);
       for (const stmt of child.handler.body) {
@@ -821,7 +822,7 @@ function buildListItemBody(template, stateVars, itemVarName, indent = '         
             lines.push(`${indent}    ${listName}.remove(${itemVarName})`);
           }
         } else if (stmt.type === N.TOAST) {
-          lines.push(`${indent}    android.widget.Toast.makeText(this, ${exprToKotlin(stmt.text, stateVars)}, android.widget.Toast.LENGTH_SHORT).show()`);
+          lines.push(`${indent}    android.widget.Toast.makeText(this, ${exprToKotlin(stmt.text, stateVars)}.toString(), android.widget.Toast.LENGTH_SHORT).show()`);
         }
       }
       lines.push(`${indent}    updateUI()`);

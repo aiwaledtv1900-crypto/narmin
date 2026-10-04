@@ -596,7 +596,11 @@ class Parser {
   // ═══ جرب / التقط / اخيرا ═══
   parseTry() {
     this.advance(); // جرب
-    const tryBlock = this.parseBlock();
+
+    // استخدم parseMixedBody مع stop keywords
+    const tryBody = this.parseMixedBody(() => this.parseStatement(), ['CATCH', 'FINALLY']);
+    const tryBlock = AST.Block(tryBody);
+
     let catchParam = null;
     let catchBlock = null;
     let finallyBlock = null;
@@ -604,7 +608,6 @@ class Parser {
     this.skipNewlines();
     if (this.checkKw('CATCH')) {
       this.advance();
-      // التقط "اسم" { ... } أو التقط { ... }
       if (this.check(T.IDENT)) {
         catchParam = this.advance().value;
       } else if (this.check(T.KEYWORD)) {
@@ -612,13 +615,15 @@ class Parser {
       } else if (this.check(T.STRING)) {
         catchParam = this.advance().value;
       }
-      catchBlock = this.parseBlock();
+      const catchBody = this.parseMixedBody(() => this.parseStatement(), ['FINALLY']);
+      catchBlock = AST.Block(catchBody);
       this.skipNewlines();
     }
 
     if (this.checkKw('FINALLY')) {
       this.advance();
-      finallyBlock = this.parseBlock();
+      const finallyBody = this.parseMixedBody(() => this.parseStatement());
+      finallyBlock = AST.Block(finallyBody);
     }
 
     return AST.Try(tryBlock, catchParam, catchBlock, finallyBlock);

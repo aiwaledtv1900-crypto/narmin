@@ -103,6 +103,8 @@ const KEYWORDS = {
   'بيضاوي': 'OVAL',
   'ايقونة': 'APP_ICON',
   'شكل': 'STYLE_SHAPE',
+  'حوار': 'ALERT', 'alert': 'ALERT',
+  'تنبيه': 'TOAST', 'toast': 'TOAST',
 };
 
 // ═══ تطبيع الأحرف الفارسية ═══
