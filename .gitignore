@@ -58,3 +58,4 @@ s*.py
 fix_cli.py
 fix_fn.py
 fix_cli.py
+ic*.py

@@ -100,6 +100,7 @@ class Parser {
       this.advance();
       return AST.KotlinRaw(this.expect(T.STRING, 'متوقع كود Kotlin').value);
     }
+    if (this.checkKw('APP_ICON')) return this.parseAppIcon();
     if (this.checkKw('NAVIGATE')) {
       this.advance();
       return AST.Navigate(this.expect(T.STRING, 'متوقع اسم الشاشة').value);
@@ -510,6 +511,7 @@ class Parser {
       'العرض': 'width', 'width': 'width',
       'الطول': 'height', 'height': 'height',
       'نوع': 'kind', 'kind': 'kind',
+      'شكل': 'shape', 'shape': 'shape',
     };
     // مفاتيح بوصفها كلمات مفتاحية
     const KW_MAP = {
@@ -520,6 +522,7 @@ class Parser {
       'STYLE_WIDTH': 'width',
       'STYLE_HEIGHT': 'height',
       'STYLE_KIND': 'kind',
+      'STYLE_SHAPE': 'shape',
     };
 
     while (!this.check(T.RPAREN) && !this.check(T.EOF)) {
@@ -555,6 +558,22 @@ class Parser {
 
     if (this.check(T.RPAREN)) this.advance();
     return props;
+  }
+
+  parseAppIcon() {
+    this.advance();
+    const props = {};
+    // الصيغة 1: ايقونة "نص"
+    if (this.check(T.STRING)) {
+      props.text = this.parseExpression();
+      // خصائص إضافية بعد النص
+      const extra = this.parseProps();
+      Object.assign(props, extra);
+    } else if (this.check(T.LPAREN)) {
+      // الصيغة 2: ايقونة ( نص "..." شكل "..." لون "..." )
+      Object.assign(props, this.parseProps());
+    }
+    return AST.AppIcon(props);
   }
 
   parseBlock() {

@@ -183,6 +183,7 @@ class Interpreter {
       case N.REMOVE_FROM:
       case N.UI_DONE:
       case N.UI_TOPBAR:
+      case N.APP_ICON:
         return;
       case N.STYLE_DECL:
         this._styles = this._styles || new Map();

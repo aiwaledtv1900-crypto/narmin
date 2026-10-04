@@ -994,7 +994,7 @@ ${ktBody}
   const manifest = `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:allowBackup="true"\n        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="true"\n        android:icon="@drawable/ic_launcher"
         android:label="${escapeXml(screenNode.name)}"
         android:supportsRtl="true"
         android:theme="@style/Theme.App">
@@ -1310,7 +1310,7 @@ ${isFirst ? `            <intent-filter>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 ${permissionsBlock}
     <application
-        android:allowBackup="true"\n        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="true"\n        android:icon="@drawable/ic_launcher"
         android:label="${escapeXml(screens[0].name)}"
         android:supportsRtl="true"
         android:theme="@style/Theme.App">

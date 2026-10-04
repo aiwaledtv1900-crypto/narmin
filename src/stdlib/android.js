@@ -492,19 +492,27 @@ function android_من_نارمين(ملف_narmin, اسم_مشروع, خيارا�
   const ast = parse(source);
 
   // ابحث عن كل الشاشات
+  let appIconNode = null;
+  const styles = new Map();
   const screens = [];
   const imports = [];
   const deps = [];
   const permissions = [];
   for (const stmt of ast.body) {
     if (stmt.type === NodeType.SCREEN) screens.push(stmt);
+    else if (stmt.type === NodeType.KOTLIN_IMPORT) imports.push(stmt.path);
+    else if (stmt.type === NodeType.GRADLE_DEP) deps.push(stmt.spec);
+    else if (stmt.type === NodeType.ANDROID_PERMISSION) permissions.push(stmt.name);
+    else if (stmt.type === NodeType.APP_ICON) appIconNode = stmt;
+    else if (stmt.type === NodeType.STYLE_DECL) styles.set(stmt.name, stmt.value);
+    else if (stmt.type === NodeType.STYLE_SET) styles.set(stmt.name, stmt.value);
   }
+
   if (screens.length === 0) {
     throw new Error('لا توجد "شاشة" في ملف نارمين');
   }
 
   // جمع الصلاحيات والمكتبات والأنماط
-  const styles = new Map();
   for (const stmt of ast.body) {
     if (stmt.type === 'AndroidPermission') {
       let perm = stmt.name;
@@ -598,20 +606,16 @@ function android_من_نارمين(ملف_narmin, اسم_مشروع, خيارا�
   const gen = generateMultiProject(screens, اسم_مشروع, مسار, { imports: [], deps, permissions, palette, buttonColor, textColor, styles });
 
   // أيقونة التطبيق — نضمن وجودها بعد كل التوليد
+  // الأيقونة في drawable (لا mipmap) لتجنّب قناع المشغّل
+  const drawDir = path.join(مسار, 'app/src/main/res/drawable');
+  fs.mkdirSync(drawDir, { recursive: true });
+  const iconXml = generateIconXml(appIconNode, اسم_مشروع);
+  fs.writeFileSync(path.join(drawDir, 'ic_launcher.xml'), iconXml, 'utf8');
+
+  // أيضاً اكتب نسخة في mipmap للتوافق
   const mipDir = path.join(مسار, 'app/src/main/res/mipmap');
   fs.mkdirSync(mipDir, { recursive: true });
-  fs.writeFileSync(path.join(mipDir, 'ic_launcher.xml'),
-    '<?xml version="1.0" encoding="utf-8"?>\n' +
-    '<vector xmlns:android="http://schemas.android.com/apk/res/android"\n' +
-    '    android:width="108dp"\n' +
-    '    android:height="108dp"\n' +
-    '    android:viewportWidth="108"\n' +
-    '    android:viewportHeight="108">\n' +
-    '    <path android:fillColor="#1A237E" android:pathData="M0,0h108v108h-108z" />\n' +
-    '    <path android:strokeColor="#FFC107" android:strokeWidth="3" android:pathData="M54,8 L54,100" />\n' +
-    '    <path android:fillColor="#FFFFFF" android:pathData="M28,30 L28,80 L38,80 L38,50 L64,80 L74,80 L74,30 L64,30 L64,60 L38,30 Z" />\n' +
-    '</vector>\n',
-    'utf8');
+  fs.writeFileSync(path.join(mipDir, 'ic_launcher.xml'), iconXml, 'utf8');
 
   return {
     نجح: true,
@@ -622,6 +626,73 @@ function android_من_نارمين(ملف_narmin, اسم_مشروع, خيارا�
 
     gradle_wrapper: baseResult.gradle_wrapper,
   };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  توليد أيقونة التطبيق
+// ═══════════════════════════════════════════════════════════
+
+function generateIconXml(appIconNode, projectName) {
+  const size = 108;
+  let shape = 'مربع_مع_حواف';
+  let colorName = 'بنفسجي عميق';
+  let text = projectName || 'تطبيق';
+
+  if (appIconNode && appIconNode.props) {
+    const props = appIconNode.props;
+
+    // استخرج القيم بمرونة — تقبل String/Identifier أو نص مباشر
+    function getVal(node) {
+      if (!node) return null;
+      if (typeof node === 'string') return node;
+      if (node.value !== undefined) return node.value;
+      if (node.name !== undefined) return node.name;
+      return null;
+    }
+
+    const shapeVal = getVal(props.shape);
+    const colorVal = getVal(props.color);
+    const textVal = getVal(props.text);
+
+    if (shapeVal) shape = String(shapeVal).trim();
+    if (colorVal) colorName = String(colorVal).trim();
+    if (textVal) text = String(textVal).trim();
+  }
+
+  // حلّ اللون
+  let color = '#1A237E';
+  try {
+    const { resolveColorSmart } = require('../natural/palettes');
+    const resolved = resolveColorSmart(colorName);
+    if (resolved) color = resolved;
+  } catch (_) {}
+
+  // تحديد المسار حسب الشكل — باستخدام includes
+  const s = String(shape);
+  let pathData;
+  if (s.includes('دايري') || s.includes('دائري') || s.includes('circle')) {
+    pathData = 'M54,0 A54,54 0 1,1 54,108 A54,54 0 1,1 54,0 Z';
+  } else if (s.includes('مربع_مع_حواف') || s.includes('مربع مع')) {
+    pathData = 'M16,0 H92 A16,16 0 0,1 108,16 V92 A16,16 0 0,1 92,108 H16 A16,16 0 0,1 0,92 V16 A16,16 0 0,1 16,0 Z';
+  } else if (s.includes('متوسط') || s.includes('medium')) {
+    pathData = 'M24,0 H84 A24,24 0 0,1 108,24 V84 A24,24 0 0,1 84,108 H24 A24,24 0 0,1 0,84 V24 A24,24 0 0,1 24,0 Z';
+  } else if (s.includes('مربع') || s.includes('square')) {
+    pathData = 'M0,0 H108 V108 H0 Z';
+  } else {
+    pathData = 'M16,0 H92 A16,16 0 0,1 108,16 V92 A16,16 0 0,1 92,108 H16 A16,16 0 0,1 0,92 V16 A16,16 0 0,1 16,0 Z';
+  }
+
+  return `<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="${size}dp"
+    android:height="${size}dp"
+    android:viewportWidth="${size}"
+    android:viewportHeight="${size}">
+    <path
+        android:fillColor="${color}"
+        android:pathData="${pathData}" />
+</vector>
+`;
 }
 
 // ═══════════════════════════════════════════════════════════

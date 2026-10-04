@@ -101,6 +101,8 @@ const KEYWORDS = {
   'مربع': 'SQUARE',
   'دايري': 'CIRCLE',
   'بيضاوي': 'OVAL',
+  'ايقونة': 'APP_ICON',
+  'شكل': 'STYLE_SHAPE',
 };
 
 // ═══ تطبيع الأحرف الفارسية ═══
