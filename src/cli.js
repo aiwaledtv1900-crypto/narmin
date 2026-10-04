@@ -6,6 +6,18 @@ const path = require('path');
 const { tokenize } = require('./lexer/lexer');
 const { run } = require('./interpreter/interpreter');
 
+// ═══ امتدادات نارمين المدعومة ═══
+const NARMIN_EXTENSIONS = ['.narm', '.nar', '.NAR', '.Nar', '.نار'];
+
+function isNarminFile(filePath) {
+  if (!filePath) return false;
+  const p = String(filePath);
+  const lower = p.toLowerCase();
+  return NARMIN_EXTENSIONS.some(ext => {
+    return p.endsWith(ext) || lower.endsWith(ext.toLowerCase());
+  });
+}
+
 const args = process.argv.slice(2);
 const cmd = args[0];
 
@@ -15,9 +27,9 @@ function showHelp() {
   console.log('الاستخدام:');
   console.log('  narmin                     تشغيل REPL التفاعلي');
   console.log('  narmin repl                تشغيل REPL التفاعلي');
-  console.log('  narmin run <file.narm>     تشغيل ملف');
+  console.log('  narmin run <file>          تشغيل ملف (.narm/.nar/.NAR/.نار)');
   console.log('  narmin run --code "..."    تشغيل كود مباشر');
-  console.log('  narmin lex <file.narm>     عرض الرموز');
+  console.log('  narmin lex <file>          عرض الرموز');
   console.log('  narmin lex --string "..."  رموز نص');
   console.log('  narmin --help              هذه المساعدة');
   console.log('');
@@ -28,7 +40,7 @@ function showHelp() {
 }
 
 // اختصار: narm file.narm == narmin run file.narm
-if (cmd && cmd.endsWith('.narm')) {
+if (cmd && isNarminFile(cmd)) {
   const { run } = require('./interpreter/interpreter');
   const fs = require('fs');
   const file = require('path').resolve(cmd);
