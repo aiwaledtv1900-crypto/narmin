@@ -17,11 +17,26 @@
 - 📦 حفظ دائم (SharedPreferences + JSON)
 - 🌐 HTTP/APIs
 
-## التثبيت
+## التثبيت على Termux
 
-    git clone https://github.com/USERNAME/narmin.git
-    cd narmin
-    npm link
+**سطران فقط:**
+
+    pkg install -y git
+    git clone https://github.com/USERNAME/narmin.git ~/DEV/apps_building/narmin
+    cd ~/DEV/apps_building/narmin
+    bash install.sh
+
+**سيُثبّت تلقائياً:**
+- Node.js
+- Java 17 (لبناء APK)
+- أدوات Android (aapt2, zipalign, apksigner)
+- الأدوات المساعدة
+
+**ثم استخدم:**
+
+    narm               # الوضع الطبيعي بالعربية
+    narm repl          # REPL البرمجة
+    narm run file.narm # تشغيل ملف
 
 ## البداية السريعة
 

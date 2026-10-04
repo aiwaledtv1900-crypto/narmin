@@ -65,3 +65,19 @@ imp*.py
 nat*.py
 fix_*.py
 fix_*.py
+
+# ملفات patch/fix المؤقتة
+k*.py
+u*.py
+v*.py
+n*.py
+t*.py
+w*.py
+ic*.py
+eh*.py
+imp*.py
+nat*.py
+ext.py
+fix_*.py
+patch*.py
+test_*.js
