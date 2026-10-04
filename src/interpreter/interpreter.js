@@ -165,6 +165,7 @@ class Interpreter {
       case N.FUNCTION: return this.execFunction(node, env);
       case N.RETURN: return this.execReturn(node, env);
       case N.TRY: return this.execTry(node, env);
+      case N.IMPORT: return this.execImport(node, env);
       case N.THROW: return this.execThrow(node, env);
       case N.BREAK: throw new BreakSignal();
       case N.CONTINUE: throw new ContinueSignal();
@@ -318,6 +319,68 @@ class Interpreter {
       }
       const tag = node.persistent ? '💾 محفوظ' : '📦 حالة';
       this.output(`${pad}  ${tag}: ${node.name} = ${stringify(value)}`);
+    }
+  }
+
+  // ═══ استورد ═══
+  execImport(node, env) {
+    const fs = require('fs');
+    const path = require('path');
+
+    const filePath = node.from;
+    if (!fs.existsSync(filePath)) {
+      throw new NarminError(`ملف الاستيراد غير موجود: ${filePath}`);
+    }
+
+    // اقرأ الملف
+    const source = fs.readFileSync(filePath, 'utf8');
+
+    // حفظ السياق
+    const prevFile = this._currentFile;
+    this._currentFile = filePath;
+
+    // حلّل
+    const { parse } = require('../parser/parser');
+    const ast = parse(source);
+
+    // بيئة معزولة
+    const importEnv = this.global.child();
+
+    // حفظ عدد المتغيرات قبل
+    const beforeVars = new Set(importEnv.values.keys());
+
+    // نفّذ
+    try {
+      for (const stmt of ast.body) {
+        this.exec(stmt, importEnv);
+      }
+    } catch (e) {
+      this._currentFile = prevFile;
+      throw e;
+    }
+    this._currentFile = prevFile;
+
+    // اجمع القيم المُصدَّرة
+    const exported = {};
+    for (const [name, value] of importEnv.values) {
+      exported[name] = value;
+    }
+
+    // أسند للاسم المستعار
+    if (node.alias) {
+      // غلّف الكائن ليتصرف كعضو
+      const namespace = {};
+      for (const [name, value] of Object.entries(exported)) {
+        namespace[name] = value;
+      }
+      env.defineLocal(node.alias, namespace);
+    } else {
+      // بلا alias — أضف كل القيم مباشرة للبيئة الحالية
+      for (const [name, value] of Object.entries(exported)) {
+        if (!env.has(name)) {
+          env.defineLocal(name, value);
+        }
+      }
     }
   }
 

@@ -61,3 +61,4 @@ fix_cli.py
 ic*.py
 eh*.py
 test_*.js
+imp*.py

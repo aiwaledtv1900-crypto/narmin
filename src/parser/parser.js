@@ -69,6 +69,7 @@ class Parser {
     if (this.checkKw('FOR')) return this.parseFor();
     if (this.checkKw('FUNCTION')) return this.parseFunction();
     if (this.checkKw('SCREEN')) return this.parseScreen();
+    if (this.checkKw('IMPORT')) return this.parseImport();
     if (this.checkKw('KOTLIN_IMPORT')) {
       this.advance();
       return AST.KotlinImport(this.expect(T.STRING, 'متوقع مسار import').value);
@@ -576,6 +577,20 @@ class Parser {
       Object.assign(props, this.parseProps());
     }
     return AST.AppIcon(props);
+  }
+
+  // ═══ استورد "file" كـ alias ═══
+  parseImport() {
+    this.advance(); // استورد
+    const path = this.expect(T.STRING, 'متوقع مسار الملف').value;
+    let alias = null;
+    // كـ اسم (اختياري)
+    if (this.checkKw('AS')) {
+      this.advance();
+      if (this.check(T.IDENT)) alias = this.advance().value;
+      else if (this.check(T.KEYWORD)) alias = this.advance().value;
+    }
+    return AST.Import(null, path, alias);
   }
 
   // ═══ جرب / التقط / اخيرا ═══
