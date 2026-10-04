@@ -22,7 +22,7 @@ const args = process.argv.slice(2);
 const cmd = args[0];
 
 function showHelp() {
-  console.log('نارمين — Narmin v0.1.0');
+  console.log('نارمين — Narmin v2.1.0');
   console.log('');
   console.log('الاستخدام:');
   console.log('  narmin                     تشغيل REPL التفاعلي');
@@ -91,7 +91,7 @@ if (cmd === 'help' || cmd === '--help' || cmd === '-h') {
 }
 
 if (cmd === 'version' || cmd === '--version' || cmd === '-v') {
-  console.log('نارمين v0.1.0');
+  console.log('نارمين v2.1.0');
   process.exit(0);
 }
 
