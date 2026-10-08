@@ -28,6 +28,20 @@ const NodeType = {
   ALERT: 'Alert',
   BACK: 'Back',
 
+  // ═══ حزمة UI+ (v2.2) ═══
+  UI_DROPDOWN: 'UIDropdown',
+  UI_DATE: 'UIDate',
+  UI_TIME: 'UITime',
+  UI_DRAWER: 'UIDrawer',
+  UI_TABBAR: 'UITabBar',
+  UI_WEBVIEW: 'UIWebView',
+  UI_VIDEO: 'UIVideo',
+  UI_AUDIO: 'UIAudio',
+  UI_MAP: 'UIMap',
+  UI_CHART: 'UIChart',
+  UI_DATE_DLG: 'UIDateDialog',
+  UI_COLOR_DLG: 'UIColorDialog',
+
   // التعابير
   NUMBER: 'NumberLiteral',
   STRING: 'StringLiteral',
@@ -157,6 +171,18 @@ const AST = {
   UIText: (expr, colorRef = null, props = {}) => ({ type: NodeType.UI_TEXT, expr, colorRef, props }),
   UIButton: (text, handler, colorRef = null, props = {}) => ({ type: NodeType.UI_BUTTON, text, handler, colorRef, props }),
   UICard: (title, children) => ({ type: NodeType.UI_CARD, title, children }),
+  UIDropdown: (hint, varName, items, props = {}) => ({ type: NodeType.UI_DROPDOWN, hint, varName, items, props }),
+  UIDate: (hint, varName, props = {}) => ({ type: NodeType.UI_DATE, hint, varName, props }),
+  UITime: (hint, varName, props = {}) => ({ type: NodeType.UI_TIME, hint, varName, props }),
+  UIDrawer: (title, children) => ({ type: NodeType.UI_DRAWER, title, children }),
+  UITabBar: (tabs, children) => ({ type: NodeType.UI_TABBAR, tabs, children }),
+  UIWebView: (url, props = {}) => ({ type: NodeType.UI_WEBVIEW, url, props }),
+  UIVideo: (src, props = {}) => ({ type: NodeType.UI_VIDEO, src, props }),
+  UIAudio: (src, props = {}) => ({ type: NodeType.UI_AUDIO, src, props }),
+  UIMap: (lat, lng, zoom, props = {}) => ({ type: NodeType.UI_MAP, lat, lng, zoom, props }),
+  UIChart: (values, labels, chartType, props = {}) => ({ type: NodeType.UI_CHART, values, labels, chartType, props }),
+  UIDateDialog: (varName, props = {}) => ({ type: NodeType.UI_DATE_DLG, varName, props }),
+  UIColorDialog: (varName, props = {}) => ({ type: NodeType.UI_COLOR_DLG, varName, props }),
 };
 
 module.exports = { NodeType, AST };

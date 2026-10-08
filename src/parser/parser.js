@@ -186,7 +186,16 @@ class Parser {
 
   parseLet(isConst) {
     this.advance();
-    const name = this.expect(T.IDENT, 'متوقع اسم المتغير').value;
+
+    // أسماء المتغيرات يمكن أن تطابق كلمة محجوزة،
+    // مثل: حالة، قائمة — عندما تظهر في موضع اسم المتغير.
+    let name;
+    if (this.check(T.IDENT) || this.check(T.KEYWORD)) {
+      name = this.advance().value;
+    } else {
+      this.error('متوقع اسم المتغير');
+    }
+
     let init = null;
     if (this.match(T.ASSIGN)) init = this.parseExpression();
     return isConst ? AST.Const(name, init) : AST.Let(name, init, true);
@@ -322,6 +331,112 @@ class Parser {
     if (this.checkKw('UI_SWITCH')) {
       this.advance();
       return AST.UISwitch(this.parseExpression());
+    }
+    if (this.checkKw('UI_DROPDOWN')) {
+      this.advance();
+      const hint = this.parseExpression();
+      let varName = null;
+      if (this.checkKw('AS')) { this.advance(); varName = this.expect(T.IDENT, 'متوقع اسم المتغير').value; }
+      let items = [];
+      if (this.checkKw('FROM')) {
+        this.advance();
+        const arr = this.parseExpression();
+        if (arr && arr.elements) items = arr.elements.map(e => (e && e.value !== undefined) ? String(e.value) : '');
+      }
+      const props = this.parseProps();
+      return AST.UIDropdown(hint, varName, items, props);
+    }
+    if (this.checkKw('UI_DATE')) {
+      this.advance();
+      const hint = this.parseExpression();
+      let varName = null;
+      if (this.checkKw('AS')) { this.advance(); varName = this.expect(T.IDENT, 'متوقع اسم المتغير').value; }
+      const props = this.parseProps();
+      return AST.UIDate(hint, varName, props);
+    }
+    if (this.checkKw('UI_TIME')) {
+      this.advance();
+      const hint = this.parseExpression();
+      let varName = null;
+      if (this.checkKw('AS')) { this.advance(); varName = this.expect(T.IDENT, 'متوقع اسم المتغير').value; }
+      const props = this.parseProps();
+      return AST.UITime(hint, varName, props);
+    }
+    if (this.checkKw('UI_DRAWER')) {
+      this.advance();
+      const title = this.parseExpression();
+      const children = this.parseMixedBody(() => this.parseUIElement());
+      return AST.UIDrawer(title, children);
+    }
+    if (this.checkKw('UI_TABBAR')) {
+      this.advance();
+      let tabs = [];
+      if (this.check('LBRACKET')) {
+        this.advance();
+        tabs.push(this.parseExpression());
+        while (this.check('COMMA')) { this.advance(); tabs.push(this.parseExpression()); }
+        if (this.check('RBRACKET')) this.advance();
+      }
+      const children = this.parseMixedBody(() => this.parseUIElement());
+      return AST.UITabBar(tabs, children);
+    }
+    if (this.checkKw('UI_WEBVIEW')) {
+      this.advance();
+      const url = this.parseExpression();
+      const props = this.parseProps();
+      return AST.UIWebView(url, props);
+    }
+    if (this.checkKw('UI_VIDEO')) {
+      this.advance();
+      const src = this.parseExpression();
+      const props = this.parseProps();
+      return AST.UIVideo(src, props);
+    }
+    if (this.checkKw('UI_AUDIO')) {
+      this.advance();
+      const src = this.parseExpression();
+      const props = this.parseProps();
+      return AST.UIAudio(src, props);
+    }
+    if (this.checkKw('UI_MAP')) {
+      this.advance();
+      const lat = this.parseExpression();
+      this.expect(T.COMMA, 'متوقع , بعد خط العرض');
+      const lng = this.parseExpression();
+      let zoom = null;
+      if (this.check(T.COMMA)) { this.advance(); zoom = this.parseExpression(); }
+      const props = this.parseProps();
+      return AST.UIMap(lat, lng, zoom, props);
+    }
+    if (this.checkKw('UI_CHART')) {
+      this.advance();
+      // اقرأ نوع الرسم كـ STRING مباشر (لتجنّب التباس الفهرس x[...])
+      let chartType;
+      if (this.check('STRING')) {
+        const tok = this.advance();
+        chartType = { type: 'StringLiteral', value: tok.value };
+      } else {
+        chartType = this.parseExpression();
+      }
+      const values = this.parseExpression();
+      let labels = null;
+      if (this.check('COMMA')) { this.advance(); labels = this.parseExpression(); }
+      const props = this.parseProps();
+      return AST.UIChart(values, labels, chartType, props);
+    }
+    if (this.checkKw('UI_DATE_DLG')) {
+      this.advance();
+      let varName = null;
+      if (this.checkKw('AS')) { this.advance(); varName = this.expect(T.IDENT, 'متوقع اسم المتغير').value; }
+      const props = this.parseProps();
+      return AST.UIDateDialog(varName, props);
+    }
+    if (this.checkKw('UI_COLOR_DLG')) {
+      this.advance();
+      let varName = null;
+      if (this.checkKw('AS')) { this.advance(); varName = this.expect(T.IDENT, 'متوقع اسم المتغير').value; }
+      const props = this.parseProps();
+      return AST.UIColorDialog(varName, props);
     }
     if (this.checkKw('UI_PROGRESS')) {
       this.advance();
@@ -566,16 +681,47 @@ class Parser {
   parseAppIcon() {
     this.advance();
     const props = {};
-    // الصيغة 1: ايقونة "نص"
+
+    // ═══ الصيغة 1: ايقونة ( نص "..." لون "..." شكل "..." ) ═══
+    if (this.check(T.LPAREN)) {
+      Object.assign(props, this.parseProps());
+      return AST.AppIcon(props);
+    }
+
+    // ═══ الصيغة 2: ايقونة "نص حر" ═══
     if (this.check(T.STRING)) {
-      props.text = this.parseExpression();
+      const tok = this.advance();
+      const rawText = String(tok.value || '');
+
+      // ═══ هل هو مسار صورة؟ (.png/.jpg/.jpeg/.webp/.gif/.bmp) ═══
+      if (/\.(png|jpg|jpeg|webp|gif|bmp)$/i.test(rawText.trim())) {
+        props.imagePath = rawText.trim();
+        // خصائص إضافية
+        const extra = this.parseProps();
+        Object.assign(props, extra);
+        return AST.AppIcon(props);
+      }
+
+      // اكتشف إن كان وصفاً غنيّاً (فيه كلمات مفتاحية للرسم الذكي)
+      const richKeywords = ['لمبة','لمبه','قلب','نجمة','نجمه','صاعقة','صاعقه',
+        'سحابة','سحابه','قفل','مفتاح','بيت','منزل','شمس','قمر','مثلث','معيّن',
+        'سداسي','خمسي','صح','x','سهم','حرف','حروف','حرفين','أرقام','ارقام',
+        'رقم','مكتوب','خلفية','عليها','عليه','يحمل'];
+      const isRich = richKeywords.some(k => rawText.includes(k)) || rawText.split(/\s+/).length >= 3;
+
+      if (isRich) {
+        props.description = rawText;
+        props.text = rawText; // fallback
+      } else {
+        props.text = tok.value;
+      }
+
       // خصائص إضافية بعد النص
       const extra = this.parseProps();
       Object.assign(props, extra);
-    } else if (this.check(T.LPAREN)) {
-      // الصيغة 2: ايقونة ( نص "..." شكل "..." لون "..." )
-      Object.assign(props, this.parseProps());
+      return AST.AppIcon(props);
     }
+
     return AST.AppIcon(props);
   }
 

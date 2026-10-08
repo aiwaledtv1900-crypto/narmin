@@ -60,13 +60,32 @@ const KEYWORDS = {
   'صف': 'UI_ROW', 'row': 'UI_ROW',
   'مسافة': 'UI_SPACER', 'spacer': 'UI_SPACER',
   'فاصل': 'UI_DIVIDER', 'divider': 'UI_DIVIDER',
+  'ويب': 'UI_WEBVIEW', 'webview': 'UI_WEBVIEW',
+  'فيديو': 'UI_VIDEO', 'video': 'UI_VIDEO',
+  'صوت': 'UI_AUDIO', 'audio': 'UI_AUDIO',
+  'خريطة': 'UI_MAP', 'map': 'UI_MAP',
+  'رسم_بياني': 'UI_CHART', 'chart': 'UI_CHART',
+  'حوار_تاريخ': 'UI_DATE_DLG', 'datedialog': 'UI_DATE_DLG',
+  'حوار_لون': 'UI_COLOR_DLG', 'colordialog': 'UI_COLOR_DLG',
   'تمّ': 'UI_DONE', 'done': 'UI_DONE',
 
-  // قوائم
+  // ═══ حزمة UI+ المتقدمة (v3.0) ═══
+  'شريط_سفلي': 'UI_BOTTOM_NAV', 'bottomnav': 'UI_BOTTOM_NAV',
+  'شبكة': 'UI_GRID', 'grid': 'UI_GRID',
+  'سحب_للتحديث': 'UI_SWIPE_REFRESH', 'swiperefresh': 'UI_SWIPE_REFRESH',
+  'قائمة_أفقية': 'UI_H_LIST', 'hlist': 'UI_H_LIST',
+  'قائمة_منسدلة': 'UI_DROPDOWN', 'dropdown': 'UI_DROPDOWN',
+  'تاريخ': 'UI_DATE', 'datepicker': 'UI_DATE',
+  'وقت': 'UI_TIME', 'timepicker': 'UI_TIME',
+  'شريط_جانب': 'UI_DRAWER', 'drawer': 'UI_DRAWER',
+  'شريط_تبويب': 'UI_TABBAR', 'tabbar': 'UI_TABBAR',
+
+  // قوائم وقواعد بيانات
   'قائمة': 'UI_LIST', 'uilist': 'UI_LIST',
   'العنصر': 'ITEM', 'item': 'ITEM',
   'احذف_من': 'REMOVE_FROM', 'removefrom': 'REMOVE_FROM',
   'تبويب': 'TAB_LAYOUT', 'tablayout': 'TAB_LAYOUT',
+  'قاعدة_بيانات': 'DB_QUERY', 'db': 'DB_QUERY',
 
   // مخرج كوتلن
   'كوتلن': 'KOTLIN_RAW', 'kotlin': 'KOTLIN_RAW',
@@ -85,6 +104,8 @@ const KEYWORDS = {
 
   // شبكة
   'جلب': 'HTTP_GET', 'fetch': 'HTTP_GET',
+  'إرسال': 'HTTP_POST', 'post': 'HTTP_POST',
+  'تحميل_ملف': 'DOWNLOAD_FILE', 'download': 'DOWNLOAD_FILE',
   'json': 'JSON_PARSE', 'json_parse': 'JSON_PARSE',
   'صلاحية': 'ANDROID_PERMISSION',
   'لون': 'STYLE_SET', 'color': 'STYLE_SET',
@@ -104,10 +125,9 @@ const KEYWORDS = {
   'ايقونة': 'APP_ICON',
   'شكل': 'STYLE_SHAPE',
   'حوار': 'ALERT', 'alert': 'ALERT',
-  'تنبيه': 'TOAST', 'toast': 'TOAST',
+  'تنبيه': 'TOAST', 'toast': 'TOAST'
 };
 
-// ═══ تطبيع الأحرف الفارسية ═══
 function normalizeArabic(text) {
   return String(text)
     .replace(/\u06A9/g, '\u0643')

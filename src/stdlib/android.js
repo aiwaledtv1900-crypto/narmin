@@ -279,7 +279,7 @@ class MainActivity : AppCompatActivity() {
 
   'app/src/main/res/values/themes.xml': (ctx) => `<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.${ctx.فئة}" parent="Theme.Material3.Light.NoActionBar">
+    <style name="Theme.App" parent="Theme.Material3.Light.NoActionBar">
         <item name="colorPrimary">#1A237E</item>
         <item name="colorPrimaryVariant">#0D47A1</item>
         <item name="colorOnPrimary">#FFFFFF</item>
@@ -605,17 +605,41 @@ function android_من_نارمين(ملف_narmin, اسم_مشروع, خيارا�
   const { generateMultiProject } = require('../codegen/android');
   const gen = generateMultiProject(screens, اسم_مشروع, مسار, { imports: [], deps, permissions, palette, buttonColor, textColor, styles });
 
-  // أيقونة التطبيق — نضمن وجودها بعد كل التوليد
-  // الأيقونة في drawable (لا mipmap) لتجنّب قناع المشغّل
+  // ═══ أيقونة التطبيق ═══
   const drawDir = path.join(مسار, 'app/src/main/res/drawable');
-  fs.mkdirSync(drawDir, { recursive: true });
-  const iconXml = generateIconXml(appIconNode, اسم_مشروع);
-  fs.writeFileSync(path.join(drawDir, 'ic_launcher.xml'), iconXml, 'utf8');
-
-  // أيضاً اكتب نسخة في mipmap للتوافق
   const mipDir = path.join(مسار, 'app/src/main/res/mipmap');
+  fs.mkdirSync(drawDir, { recursive: true });
   fs.mkdirSync(mipDir, { recursive: true });
-  fs.writeFileSync(path.join(mipDir, 'ic_launcher.xml'), iconXml, 'utf8');
+
+  let iconHandled = false;
+
+  // ═══ المسار 1: المستخدم أعطى مسار صورة ═══
+  if (appIconNode && appIconNode.props && appIconNode.props.imagePath) {
+    try {
+      const { processImage } = require('../icongen/image');
+      const r = processImage(appIconNode.props.imagePath, path.join(drawDir, 'ic_launcher'));
+      if (r.success) {
+        console.log('✅ أيقونة من صورة (' + r.method + '): ' + r.outputPath);
+        if (r.warning) console.log('⚠️ ' + r.warning);
+        // نسخة في mipmap أيضاً
+        const mipCopy = path.join(mipDir, 'ic_launcher' + r.ext);
+        fs.copyFileSync(r.outputPath, mipCopy);
+        iconHandled = true;
+      } else {
+        console.log('❌ فشل تحميل الصورة: ' + r.error);
+        console.log('   سنستخدم أيقونة نصية بدلاً منها');
+      }
+    } catch (e) {
+      console.log('❌ خطأ في معالجة الصورة: ' + e.message);
+    }
+  }
+
+  // ═══ المسار 2: أيقونة XML من الوصف ═══
+  if (!iconHandled) {
+    const iconXml = generateIconXml(appIconNode, اسم_مشروع);
+    fs.writeFileSync(path.join(drawDir, 'ic_launcher.xml'), iconXml, 'utf8');
+    fs.writeFileSync(path.join(mipDir, 'ic_launcher.xml'), iconXml, 'utf8');
+  }
 
   return {
     نجح: true,
@@ -633,64 +657,28 @@ function android_من_نارمين(ملف_narmin, اسم_مشروع, خيارا�
 // ═══════════════════════════════════════════════════════════
 
 function generateIconXml(appIconNode, projectName) {
-  const size = 108;
-  let shape = 'مربع_مع_حواف';
-  let colorName = 'بنفسجي عميق';
-  let text = projectName || 'تطبيق';
-
-  if (appIconNode && appIconNode.props) {
-    const props = appIconNode.props;
-
-    // استخرج القيم بمرونة — تقبل String/Identifier أو نص مباشر
-    function getVal(node) {
-      if (!node) return null;
-      if (typeof node === 'string') return node;
-      if (node.value !== undefined) return node.value;
-      if (node.name !== undefined) return node.name;
-      return null;
-    }
-
-    const shapeVal = getVal(props.shape);
-    const colorVal = getVal(props.color);
-    const textVal = getVal(props.text);
-
-    if (shapeVal) shape = String(shapeVal).trim();
-    if (colorVal) colorName = String(colorVal).trim();
-    if (textVal) text = String(textVal).trim();
-  }
-
-  // حلّ اللون
-  let color = '#1A237E';
+  // ═══ المسار الجديد: NLP + layout + render ═══
   try {
-    const { resolveColorSmart } = require('../natural/palettes');
-    const resolved = resolveColorSmart(colorName);
-    if (resolved) color = resolved;
-  } catch (_) {}
-
-  // تحديد المسار حسب الشكل — باستخدام includes
-  const s = String(shape);
-  let pathData;
-  if (s.includes('دايري') || s.includes('دائري') || s.includes('circle')) {
-    pathData = 'M54,0 A54,54 0 1,1 54,108 A54,54 0 1,1 54,0 Z';
-  } else if (s.includes('مربع_مع_حواف') || s.includes('مربع مع')) {
-    pathData = 'M16,0 H92 A16,16 0 0,1 108,16 V92 A16,16 0 0,1 92,108 H16 A16,16 0 0,1 0,92 V16 A16,16 0 0,1 16,0 Z';
-  } else if (s.includes('متوسط') || s.includes('medium')) {
-    pathData = 'M24,0 H84 A24,24 0 0,1 108,24 V84 A24,24 0 0,1 84,108 H24 A24,24 0 0,1 0,84 V24 A24,24 0 0,1 24,0 Z';
-  } else if (s.includes('مربع') || s.includes('square')) {
-    pathData = 'M0,0 H108 V108 H0 Z';
-  } else {
-    pathData = 'M16,0 H92 A16,16 0 0,1 108,16 V92 A16,16 0 0,1 92,108 H16 A16,16 0 0,1 0,92 V16 A16,16 0 0,1 16,0 Z';
+    const { generateFromNodeOrString } = require('../icongen/generator');
+    return generateFromNodeOrString(appIconNode);
+  } catch (e) {
+    // سجل الخطأ للمطورين
+    if (process.env.NARMIN_DEBUG) {
+      console.error('[icon] NLP failed:', e.message);
+    }
   }
 
+  // ═══ fallback: أيقونة افتراضية ═══
+  const projectNameSafe = projectName || 'تطبيق';
   return `<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="${size}dp"
-    android:height="${size}dp"
-    android:viewportWidth="${size}"
-    android:viewportHeight="${size}">
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
     <path
-        android:fillColor="${color}"
-        android:pathData="${pathData}" />
+        android:fillColor="#1A237E"
+        android:pathData="M54,4 A50,50 0 1,0 54,104 A50,50 0 1,0 54,4 Z" />
 </vector>
 `;
 }

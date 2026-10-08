@@ -1,0 +1,113 @@
+'use strict';
+
+// ═══ مولد كود أندرويد بلغة نارمين v3.0 ═══
+// يولد تطبيقات Android حقيقية مع BottomNavigationView و Material Design 3
+
+function generateAndroidCode(ast) {
+  return `
+// كود كوتلن مُولد تلقائياً بواسطة لغة نارمين v3.0
+package com.narmin.app
+
+import android.os.Bundle
+import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.bottomnavigation.BottomNavigationView
+
+class MainActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        val bottomNav = findViewById<BottomNavigationView>(R.id.bottom_navigation)
+        bottomNav?.setOnItemSelectedListener { item ->
+            when (item.itemId) {
+                R.id.nav_home -> true
+                R.id.nav_search -> true
+                R.id.nav_notifications -> true
+                R.id.nav_profile -> true
+                else -> false
+            }
+        }
+    }
+}
+`;
+}
+
+function generateMultiProject(screens, projectName, projectPath, options = {}) {
+  const packageName = (options.packageName || ("com.narmin." + String(projectName).replace(/[^a-zA-Z0-9]/g, "").toLowerCase() || "myapp"));
+  const javaPackage = packageName.replace(/[^a-zA-Z0-9_.]/g, "");
+  const activityDir = require("path").join(projectPath, "app/src/main/java", javaPackage.replace(/\./g, "/"));
+  const resLayout = require("path").join(projectPath, "app/src/main/res/layout");
+  const manifestPath = require("path").join(projectPath, "app/src/main/AndroidManifest.xml");
+  require("fs").mkdirSync(activityDir, { recursive: true });
+  require("fs").mkdirSync(resLayout, { recursive: true });
+
+  const esc = (v) => String(v == null ? "" : v)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+  const literal = (node) => {
+    if (node == null) return "";
+    if (typeof node === "string" || typeof node === "number" || typeof node === "boolean") return String(node);
+    if (node.value !== undefined) return String(node.value);
+    if (node.name) return String(node.name);
+    return "";
+  };
+
+  const first = screens[0] || { name: projectName, children: [] };
+  const views = [];
+  const clickHandlers = [];
+
+  for (const child of first.children || []) {
+    if (!child) continue;
+    if (child.type === "UIHeading") {
+      views.push("<TextView android:layout_width=\"match_parent\" android:layout_height=\"wrap_content\" android:text=\"" + esc(literal(child.text)) + "\" android:textSize=\"26sp\" android:textStyle=\"bold\" android:padding=\"8dp\" />");
+    } else if (child.type === "UIText") {
+      const id = "text_" + views.length;
+      views.push("<TextView android:id=\"@+id/" + id + "\" android:layout_width=\"match_parent\" android:layout_height=\"wrap_content\" android:text=\"" + esc(literal(child.expr)) + "\" android:padding=\"8dp\" />");
+    } else if (child.type === "UIButton") {
+      const id = "button_" + views.length;
+      views.push("<Button android:id=\"@+id/" + id + "\" android:layout_width=\"match_parent\" android:layout_height=\"wrap_content\" android:text=\"" + esc(literal(child.text)) + "\" android:layout_marginTop=\"8dp\" />");
+      clickHandlers.push("findViewById<android.widget.Button>(R.id." + id + ").setOnClickListener { }");
+    } else if (child.type === "UITextField") {
+      views.push("<EditText android:layout_width=\"match_parent\" android:layout_height=\"wrap_content\" android:hint=\"" + esc(literal(child.hint)) + "\" android:padding=\"8dp\" />");
+    } else if (child.type === "UICheckBox") {
+      views.push("<CheckBox android:layout_width=\"match_parent\" android:layout_height=\"wrap_content\" android:text=\"" + esc(literal(child.text)) + "\" />");
+    } else if (child.type === "UISwitch") {
+      views.push("<Switch android:layout_width=\"match_parent\" android:layout_height=\"wrap_content\" android:text=\"" + esc(literal(child.text)) + "\" />");
+    } else if (child.type === "UIDivider") {
+      views.push("<View android:layout_width=\"match_parent\" android:layout_height=\"1dp\" android:background=\"#DDDDDD\" android:layout_marginVertical=\"8dp\" />");
+    } else if (child.type === "UISpacer") {
+      views.push("<Space android:layout_width=\"match_parent\" android:layout_height=\"16dp\" />");
+    } else if (child.type === "UIDropdown") {
+      views.push("<Spinner android:layout_width=\"match_parent\" android:layout_height=\"wrap_content\" />");
+    } else {
+      views.push("<TextView android:layout_width=\"match_parent\" android:layout_height=\"wrap_content\" android:text=\"نارمين\" android:padding=\"8dp\" />");
+    }
+  }
+
+  if (!views.length) {
+    views.push("<TextView android:layout_width=\"match_parent\" android:layout_height=\"wrap_content\" android:text=\"" + esc(first.name || projectName) + "\" android:textSize=\"24sp\" android:textStyle=\"bold\" android:gravity=\"center\" />");
+  }
+
+  const layout = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<ScrollView xmlns:android=\"http://schemas.android.com/apk/res/android\" android:layout_width=\"match_parent\" android:layout_height=\"match_parent\"><LinearLayout android:layout_width=\"match_parent\" android:layout_height=\"wrap_content\" android:orientation=\"vertical\" android:padding=\"24dp\">" + views.join("") + "</LinearLayout></ScrollView>\n";
+  require("fs").writeFileSync(require("path").join(resLayout, "activity_main.xml"), layout, "utf8");
+
+  const activity = "package " + javaPackage + "\n\nimport android.os.Bundle\nimport androidx.appcompat.app.AppCompatActivity\n\nclass MainActivity : AppCompatActivity() {\n    override fun onCreate(savedInstanceState: Bundle?) {\n        super.onCreate(savedInstanceState)\n        setContentView(R.layout.activity_main)\n        " + clickHandlers.join("\n        ") + "\n    }\n}\n";
+  require("fs").writeFileSync(require("path").join(activityDir, "MainActivity.kt"), activity, "utf8");
+
+  if (options.permissions && options.permissions.length) {
+    let manifest = require("fs").readFileSync(manifestPath, "utf8");
+    const permissions = options.permissions.map(x => "    <uses-permission android:name=\"" + esc(x) + "\" />").join("\n");
+    manifest = manifest.replace(/(<manifest[^>]*>)/, "$1\n" + permissions);
+    require("fs").writeFileSync(manifestPath, manifest, "utf8");
+  }
+
+  return {
+    نجح: true,
+    حزمة: packageName,
+    screens: screens.map(s => s.name),
+    مسار: projectPath
+  };
+}
+
+module.exports = { generateAndroidCode, generateMultiProject };

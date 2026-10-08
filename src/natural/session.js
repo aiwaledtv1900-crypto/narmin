@@ -76,19 +76,39 @@ class NaturalSession {
 
   // ═══ 3) تقسيم سطر بأوامر متعددة ═══
   splitCommands(text) {
-    const keywords = ['انشئ', 'انشي', 'انش', 'أضف', 'اضف',
+    // الكلمات المركبة أولاً — لا تقسّمها
+    const compound = [
+      'اعرض الأجهزة', 'اعرض الاجهزة', 'اعرض البيئة',
+      'أعرض الأجهزة', 'أعرض الاجهزة', 'أعرض البيئة'
+    ];
+    
+    for (const phrase of compound) {
+      if (text.includes(phrase)) {
+        return [text]; // لا تقسّم
+      }
+    }
+    
+    const keywords = [
+      'انشئ', 'انشي', 'انش', 'أضف', 'اضف',
       'اريد', 'أريد', 'اعرض', 'شغّل', 'شغل',
       'ابن', 'ابنِ', 'تراجع', 'خروج',
       'ارني', 'أرني',
       'واجهة', 'واجهه', 'خلفية', 'نمط',
       'ازرار', 'أزرار', 'الازرار', 'الأزرار',
       'لون', 'ألوان', 'الوان',
-      'نص', 'النص'];
+      'قائمة منسدلة', 'قائمة_منسدلة',
+      'تاريخ', 'وقت',
+      'شريط جانبي', 'شريط_جانب',
+      'شريط تبويب', 'شريط_تبويب',
+      'ويب', 'فيديو', 'صوت',
+      'خريطة', 'رسم بياني', 'رسم_بياني',
+      'حوار تاريخ', 'حوار_تاريخ',
+      'حوار لون', 'حوار_لون'
+    ];
     const marker = '\u0001\u0001';
     let work = text;
     for (const kw of keywords) {
       const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      // لا يسبق الكلمة حرف عربي، ويليها فراغ أو نهاية
       const re = new RegExp('(?<![\\u0600-\\u06FF])(?=' + escaped + '(?:\\s|$))', 'g');
       work = work.replace(re, marker);
     }
@@ -102,6 +122,14 @@ class NaturalSession {
     // نظّف رموز prompt
     t = t.replace(/^[»>›››»»»]+\s*/, '').trim();
     if (!t || t.startsWith('#')) return null;
+    
+    // ═══ أوامر اعرض المبكرة ═══
+    if (/^(?:اعرض|أعرض)\s+(?:الأجهزة|الاجهزة|أجهزة|اجهزة)\s*$/.test(t)) {
+      return { action: 'devices' };
+    }
+    if (/^(?:اعرض|أعرض)\s+(?:البيئة|بيئة)\s*$/.test(t)) {
+      return { action: 'environment' };
+    }
 
     // ═══ إنشاء تطبيق ═══
     let m = t.match(/^(?:انشئ|انشي|انش|ابني|ابن[يِ]|اعمل|اصنع)\s+(?:تطبيق|تطبيقاً|برنامج|لي)\s*(.*)$/);
@@ -231,6 +259,124 @@ class NaturalSession {
       return `✓ فاصل`;
     }
 
+
+    // ═══════════════════════════════════════════════════════
+    // ═══ حزمة UI+ (v2.2) — أوامر الوضع الطبيعي ═══
+    // ═══════════════════════════════════════════════════════
+
+    // ═══ قائمة منسدلة ═══
+    m = t.match(/^(?:أضف|اضف|ضع)?\s*(?:قائمة_منسدلة|قائمة منسدلة|dropdown)\s*["'«»]([^"'«»]+)["'«»](?:\s+كـ\s+(\S+))?(?:\s+من\s+\[([^\]]+)\])?/);
+    if (m) {
+      const hint = m[1];
+      const varName = m[2] || null;
+      const itemsRaw = m[3] || '';
+      const items = itemsRaw.split(/[,،]/).map(s => s.trim()).filter(Boolean);
+      if (varName && !this.stateVars.has(varName)) {
+        this.stateVars.set(varName, { type: 'String', init: '"' + (items[0] || '') + '"' });
+      }
+      this.elements.push({ type: 'dropdown', hint, varName, items });
+      return `✓ قائمة منسدلة: "${hint}"${varName ? ' ← ' + varName : ''} [${items.length} عنصر]`;
+    }
+
+    // ═══ تاريخ ═══
+    m = t.match(/^(?:أضف|اضف|ضع)?\s*(?:تاريخ|datepicker)\s*["'«»]([^"'«»]+)["'«»](?:\s+كـ\s+(\S+))?/);
+    if (m) {
+      const hint = m[1];
+      const varName = m[2] || null;
+      if (varName && !this.stateVars.has(varName)) {
+        this.stateVars.set(varName, { type: 'String', init: '""' });
+      }
+      this.elements.push({ type: 'datepicker', hint, varName });
+      return `✓ منتقي تاريخ: "${hint}"${varName ? ' ← ' + varName : ''}`;
+    }
+
+    // ═══ وقت ═══
+    m = t.match(/^(?:أضف|اضف|ضع)?\s*(?:وقت|timepicker)\s*["'«»]([^"'«»]+)["'«»](?:\s+كـ\s+(\S+))?/);
+    if (m) {
+      const hint = m[1];
+      const varName = m[2] || null;
+      if (varName && !this.stateVars.has(varName)) {
+        this.stateVars.set(varName, { type: 'String', init: '""' });
+      }
+      this.elements.push({ type: 'timepicker', hint, varName });
+      return `✓ منتقي وقت: "${hint}"${varName ? ' ← ' + varName : ''}`;
+    }
+
+    // ═══ شريط جانبي ═══
+    m = t.match(/^(?:أضف|اضف|ضع)?\s*(?:شريط_جانب|شريط جانبي|drawer)\s*["'«»]([^"'«»]+)["'«»]/);
+    if (m) {
+      this.elements.push({ type: 'drawer', title: m[1] });
+      return `✓ شريط جانبي: "${m[1]}"`;
+    }
+
+    // ═══ شريط تبويب ═══
+    m = t.match(/^(?:أضف|اضف|ضع)?\s*(?:شريط_تبويب|شريط تبويب|tabbar)\s*\[([^\]]+)\]/);
+    if (m) {
+      const tabs = m[1].split(/[,،]/).map(s => s.trim().replace(/^["'«»]|["'«»]$/g, '')).filter(Boolean);
+      this.elements.push({ type: 'tabbar', tabs });
+      return `✓ شريط تبويب: ${tabs.length} تبويب`;
+    }
+
+    // ═══ ويب ═══
+    m = t.match(/^(?:أضف|اضف|ضع)?\s*(?:ويب|webview)\s*["'«»]([^"'«»]+)["'«»]/);
+    if (m) {
+      this.elements.push({ type: 'webview', url: m[1] });
+      return `✓ ويب: ${m[1]}`;
+    }
+
+    // ═══ فيديو ═══
+    m = t.match(/^(?:أضف|اضف|ضع)?\s*(?:فيديو|video)\s*["'«»]([^"'«»]+)["'«»]/);
+    if (m) {
+      this.elements.push({ type: 'video', src: m[1] });
+      return `✓ فيديو: ${m[1]}`;
+    }
+
+    // ═══ صوت ═══
+    m = t.match(/^(?:أضف|اضف|ضع)?\s*(?:صوت|audio)\s*["'«»]([^"'«»]+)["'«»]/);
+    if (m) {
+      this.elements.push({ type: 'audio', src: m[1] });
+      return `✓ صوت: ${m[1]}`;
+    }
+
+    // ═══ خريطة ═══
+    m = t.match(/^(?:أضف|اضف|ضع)?\s*(?:خريطة|map)\s+([\d.]+)\s*[،,]\s*([\d.]+)(?:\s*[،,]\s*(\d+))?/);
+    if (m) {
+      this.elements.push({ type: 'map', lat: m[1], lng: m[2], zoom: m[3] || '15' });
+      return `✓ خريطة: (${m[1]}, ${m[2]})`;
+    }
+
+    // ═══ رسم بياني ═══
+    m = t.match(/^(?:أضف|اضف|ضع)?\s*(?:رسم_بياني|رسم بياني|chart)\s*["'«»]([^"'«»]+)["'«»]\s*\[([^\]]+)\](?:\s*[،,]\s*\[([^\]]+)\])?/);
+    if (m) {
+      const chartType = m[1];
+      const values = m[2].split(/[,،]/).map(s => s.trim()).filter(Boolean);
+      const labels = m[3] ? m[3].split(/[,،]/).map(s => s.trim().replace(/^["'«»]|["'«»]$/g, '')).filter(Boolean) : [];
+      this.elements.push({ type: 'chart', chartType, values, labels });
+      return `✓ رسم بياني (${chartType}): ${values.length} قيمة`;
+    }
+
+    // ═══ حوار تاريخ ═══
+    m = t.match(/^(?:أضف|اضف|ضع)?\s*(?:حوار_تاريخ|حوار تاريخ|datedialog)(?:\s+كـ\s+(\S+))?/);
+    if (m) {
+      const varName = m[1] || null;
+      if (varName && !this.stateVars.has(varName)) {
+        this.stateVars.set(varName, { type: 'String', init: '""' });
+      }
+      this.elements.push({ type: 'datedialog', varName });
+      return `✓ حوار تاريخ${varName ? ' ← ' + varName : ''}`;
+    }
+
+    // ═══ حوار لون ═══
+    m = t.match(/^(?:أضف|اضف|ضع)?\s*(?:حوار_لون|حوار لون|colordialog)(?:\s+كـ\s+(\S+))?/);
+    if (m) {
+      const varName = m[1] || null;
+      if (varName && !this.stateVars.has(varName)) {
+        this.stateVars.set(varName, { type: 'String', init: '"#000000"' });
+      }
+      this.elements.push({ type: 'colordialog', varName });
+      return `✓ حوار لون${varName ? ' ← ' + varName : ''}`;
+    }
+
     // ═══ الألوان ═══
     let handled = [];
     let matched = false;
@@ -338,10 +484,23 @@ class NaturalSession {
     if (mI) {
       const rest = mI[1].trim();
       let props = {};
+      // ═══ الوصف الحرّ — إن وُجد نص بين علامتي اقتباس ═══
       const textM = rest.match(/["'«»]([^"'«»]+)["'«»]/);
       const colorM = rest.match(/لون\s+["'«»]([^"'«»]+)["'«»]/);
       const shapeM = rest.match(/شكل\s+["'«»]([^"'«»]+)["'«»]/);
-      if (textM) props.text = textM[1];
+
+      // احفظ الوصف الحرّ إن كان غنياً (كلمات مفتاحية أو كلمات متعددة)
+      const richKeywords = ['لمبة','لمبه','قلب','نجمة','نجمه','صاعقة','ساعقه','سحابة','سحابه',
+        'قفل','مفتاح','بيت','منزل','شمس','قمر','مثلث','معيّن','سداسي','خمسي',
+        'حرف','حروف','حرفين','أرقام','ارقام','رقم','مكتوب','خلفية','عليها','عليه','يحمل'];
+      if (textM) {
+        const rawText = textM[1];
+        const isRich = richKeywords.some(k => rawText.includes(k)) || rawText.split(/\s+/).length >= 3;
+        if (isRich) {
+          props.description = rawText;
+        }
+        props.text = rawText;
+      }
       if (colorM) props.color = colorM[1];
       if (shapeM) props.shape = shapeM[1];
       if (!props.text) props.text = this.appName;
@@ -394,18 +553,35 @@ class NaturalSession {
       return '✓ محفوظ: ' + name;
     }
 
+    // ═══ اعرض الأجهزة / البيئة ═══
+    if (/^(?:اعرض|أعرض)\s+(?:الأجهزة|الاجهزة|أجهزة|اجهزة)\s*$/.test(t)) {
+      return { action: 'devices' };
+    }
+
+    if (/^(?:اعرض|أعرض)\s+(?:البيئة|بيئة)\s*$/.test(t)) {
+      return { action: 'environment' };
+    }
+
     // ═══ اعرض ═══
     if (/^(?:اعرض|عرض|حالة|الكود|ارني|أرني|what)$/.test(t)) {
       return this.renderState();
     }
 
+    if (/^(?:اعرض|أعرض)\s+(?:الأجهزة|الاجهزة|أجهزة|اجهزة)$/.test(t)) {
+      return { action: 'devices' };
+    }
+
+    if (/^(?:اعرض|أعرض)\s+(?:البيئة|بيئة)$/.test(t)) {
+      return { action: 'environment' };
+    }
+
     // ═══ شغّل ═══
-    if (/^(?:شغّل|شغل|شغله|شغلي|شغل\s+التطبيق|ثبت|ثبّت|جربه|جرب|ابن[يِ]\s+وشغّل|ابن[يِ]\s+وثبت)$/.test(t)) {
+    if (/^(?:شغّل|شغل|شغله|شغلي|شغّل\s+التطبيق|شغل\s+التطبيق|ثبت|ثبّت|ثبّت\s+التطبيق|ثبت\s+التطبيق|جربه|جرب|ابن[يِ]\s+وشغّل(?:\s+التطبيق)?|ابن[يِ]\s+وثبت(?:\s+التطبيق)?)$/.test(t)) {
       return { action: 'build_and_run' };
     }
 
     // ═══ ابنِ ═══
-    if (/^(?:ابن[يِ]|بناء|ابن[يِ]\s+فقط|ترجم)$/.test(t)) {
+    if (/^(?:ابن[يِ]|ابنِ|ابني|بناء|ابن[يِ]\s+فقط|ابنِ\s+التطبيق|ابني\s+التطبيق|بناء\s+التطبيق|ترجم)$/.test(t)) {
       return { action: 'build' };
     }
 
@@ -448,7 +624,7 @@ class NaturalSession {
   parse(text) {
     const trimmed = String(text).trim();
     // DONT_SPLIT — لا تقسّم هذه الأوامر
-    if (/^(?:ايقونة|أيقونة|icon|صلاحية|صلاحيات|permission|مكتبة|library|شريط_علوي|شريط علوي|topbar|محفوظ|حالة|state|تعديل|عدّل|عدل|صحّح|صحح|نعم|صح|اجل|موافق|yes|y|لا|خطأ|خطا|no|n)\s/i.test(trimmed) || /^(?:نعم|لا|yes|no)$/i.test(trimmed)) {
+    if (/^(?:اعرض\s+(?:الأجهزة|الاجهزة|أجهزة|اجهزة|البيئة|بيئة|الكود|الحالة|الواجهة)|ايقونة|أيقونة|icon|صلاحية|صلاحيات|permission|مكتبة|library|شريط_علوي|شريط علوي|topbar|محفوظ|حالة|state|تعديل|عدّل|عدل|صحّح|صحح|نعم|صح|اجل|موافق|yes|y|لا|خطأ|خطا|no|n)(?:\s|$)/i.test(trimmed) || /^(?:نعم|لا|yes|no)$/i.test(trimmed)) {
       return this.parseOne(trimmed);
     }
     if (/^(?:تعديل|عدّل|عدل|صحّح|صحح)\s+/.test(trimmed)) {
@@ -647,7 +823,13 @@ class NaturalSession {
 
     // 2) الأيقونة
     if (this.icon) {
-      lines.push(`ايقونة ( نص "${this.icon.text}" لون "${this.icon.color}" شكل "${this.icon.shape}" )`);
+      if (this.icon.description) {
+        // الوصف الحرّ (صيغة جديدة)
+        lines.push(`ايقونة "${this.icon.description}"`);
+      } else {
+        // الصيغة القديمة
+        lines.push(`ايقونة ( نص "${this.icon.text}" لون "${this.icon.color}" شكل "${this.icon.shape}" )`);
+      }
       lines.push('');
     }
 

@@ -278,6 +278,49 @@ class Interpreter {
       this.output(`${pad}  ⚠ حوار: ${this.eval(node.title, env)}`);
     } else if (node.type === N.BACK) {
       this.output(`${pad}  ← رجوع`);
+    } else if (node.type === N.UI_DROPDOWN) {
+      const hint = this.eval(node.hint, env);
+      this.output(`${pad}  🔽 قائمة منسدلة: "${hint}" [${node.items.length} عنصر]`);
+      if (node.varName) env.defineLocal(node.varName, node.items[0] || '');
+    } else if (node.type === N.UI_DATE) {
+      const hint = this.eval(node.hint, env);
+      this.output(`${pad}  📅 تاريخ: "${hint}"`);
+      if (node.varName) env.defineLocal(node.varName, '');
+    } else if (node.type === N.UI_TIME) {
+      const hint = this.eval(node.hint, env);
+      this.output(`${pad}  ⏰ وقت: "${hint}"`);
+      if (node.varName) env.defineLocal(node.varName, '');
+    } else if (node.type === N.UI_DRAWER) {
+      const title = this.eval(node.title, env);
+      this.output(`${pad}  📂 شريط جانبي: "${title}"`);
+      for (const child of node.children || []) this.execScreenElement(child, env, depth + 2);
+    } else if (node.type === N.UI_TABBAR) {
+      this.output(`${pad}  🗂 شريط تبويب: ${node.tabs.length} تبويب`);
+      for (const child of node.children || []) this.execScreenElement(child, env, depth + 2);
+    } else if (node.type === N.UI_WEBVIEW) {
+      const url = this.eval(node.url, env);
+      this.output(`${pad}  🌐 ويب: ${url}`);
+    } else if (node.type === N.UI_VIDEO) {
+      const src = this.eval(node.src, env);
+      this.output(`${pad}  🎬 فيديو: ${src}`);
+    } else if (node.type === N.UI_AUDIO) {
+      const src = this.eval(node.src, env);
+      this.output(`${pad}  🎵 صوت: ${src}`);
+    } else if (node.type === N.UI_MAP) {
+      const lat = this.eval(node.lat, env);
+      const lng = this.eval(node.lng, env);
+      this.output(`${pad}  🗺 خريطة: (${lat}, ${lng})`);
+    } else if (node.type === N.UI_CHART) {
+      const t = this.eval(node.chartType, env);
+      const vals = this.eval(node.values, env);
+      const count = Array.isArray(vals) ? vals.length : 0;
+      this.output(`${pad}  📊 رسم بياني (${t}): ${count} قيمة`);
+    } else if (node.type === N.UI_DATE_DLG) {
+      this.output(`${pad}  📅 حوار تاريخ${node.varName ? ' ← ' + node.varName : ''}`);
+      if (node.varName) env.defineLocal(node.varName, '');
+    } else if (node.type === N.UI_COLOR_DLG) {
+      this.output(`${pad}  🎨 حوار لون${node.varName ? ' ← ' + node.varName : ''}`);
+      if (node.varName) env.defineLocal(node.varName, '#000000');
     } else if (node.type === N.UI_LIST) {
       const list = env.get(node.source);
       if (Array.isArray(list)) {

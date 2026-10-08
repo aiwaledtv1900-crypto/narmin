@@ -125,19 +125,6 @@ if (cmd === 'run') {
   process.exit(0);
 }
 
-// ═══ تحويل اسم عربي إلى إنجليزي صالح كـ package ═══
-function arabicToPackageName(name) {
-  if (!name) return 'App' + Date.now().toString(36).slice(-5);
-  // احذف العربي والرموز
-  let cleaned = String(name).replace(/[^\x00-\x7F]/g, '').replace(/[^a-zA-Z]/g, '');
-  // إن كانت النتيجة حروفاً كافية
-  if (cleaned.length >= 2) {
-    return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-  }
-  // إن كانت أرقاماً فقط أو فارغة → اسم فريد
-  return 'App' + Date.now().toString(36).slice(-6).toUpperCase();
-}
-
 if (cmd === 'build') {
   const file = args[1];
   if (!file) {
@@ -151,7 +138,7 @@ if (cmd === 'build') {
     process.exit(1);
   }
   const shouldRun = args.includes('--run') || args.includes('--run-app');
-  let projectName = args[2] && !args[2].startsWith('--') ? args[2] : null;
+  const projectName = args[2] && !args[2].startsWith('--') ? args[2] : null;
 
   (async () => {
     try {
@@ -160,88 +147,23 @@ if (cmd === 'build') {
       if (projectName) console.log('▶ اسم المشروع: ' + projectName);
       console.log('');
 
-      // ═══ 1) توليد ملفات المشروع ═══
-      // حدد اسم المشروع
-      if (!projectName) {
-        // استخرج اسم أول شاشة أو استخدم اسم الملف
-        const baseName = path.basename(abs, path.extname(abs));
-        projectName = arabicToPackageName(baseName);
-      } else {
-        projectName = arabicToPackageName(projectName);
-      }
-      console.log('▶ اسم المشروع (package): ' + projectName);
-      console.log('');
-
       const result = await android_من_نارمين(abs, projectName, {
-        run: false,
-        install: false,
+        run: shouldRun,
+        install: shouldRun,
         verbose: true,
       });
 
       console.log('');
-      console.log('✓ تم توليد المشروع: ' + result.مسار);
-      console.log('  الشاشات: ' + (result.الشاشات || []).join('، '));
-      console.log('  الحزمة: ' + result.حزمة);
-      console.log('');
-
-      // ═══ 2) بناء APK بـ Gradle ═══
-      console.log('▶ بدء البناء بـ Gradle...');
-      const { android_بناء } = require('./stdlib/android');
-      const buildRes = await android_بناء(result.مسار, { verbose: true });
-
-      const apk = buildRes && buildRes.apk ? buildRes.apk : (result.مسار + '/app/build/outputs/apk/debug/app-debug.apk');
-
-      // تحقق من نجاح Gradle الفعلي
-      if (!buildRes || !buildRes.نجح) {
-        console.log('');
-        console.log('════════════════════════════════════════════');
-        console.log('  ❌ فشل البناء');
-        console.log('════════════════════════════════════════════');
-        if (buildRes && buildRes.خطأ) {
-          console.log('');
-          console.log('آخر أسطر الخطأ:');
-          console.log(buildRes.خطأ);
-        }
-        process.exit(1);
-      }
-
-      // تحقق من وجود APK
-      const fs = require('fs');
-      if (!fs.existsSync(apk)) {
-        console.log('');
-        console.log('════════════════════════════════════════════');
-        console.log('  ❌ Gradle نجح لكن APK غير موجود');
-        console.log('  متوقع: ' + apk);
-        console.log('════════════════════════════════════════════');
-        process.exit(1);
-      }
-
-      console.log('');
       console.log('════════════════════════════════════════════');
       console.log('  ✅ اكتمل البناء');
-      console.log('  📦 APK: ' + apk);
+      if (result && result.apk) console.log('  📦 APK: ' + result.apk);
+      if (result && result.package) console.log('  📱 الحزمة: ' + result.package);
       console.log('════════════════════════════════════════════');
 
-      // ═══ 3) تثبيت + تشغيل (اختياري) ═══
       if (shouldRun) {
         console.log('');
-        console.log('▶ التثبيت على الجهاز...');
-        const { android_ثبّت, android_شغّل } = require('./stdlib/android');
-        const installRes = await android_ثبّت(apk);
-        if (installRes && (installRes.نجح || installRes.success)) {
-          console.log('✓ تم التثبيت');
-          console.log('▶ التشغيل...');
-          try {
-            await android_شغّل(result.حزمة, '.MainActivity');
-            console.log('✓ التطبيق يعمل على هاتفك');
-          } catch (e) {
-            console.log('⚠ التطبيق ثُبّت لكن لم يُشغَّل تلقائياً: ' + e.message);
-          }
-        } else {
-          console.log('❌ فشل التثبيت');
-        }
+        console.log('✅ التطبيق يعمل على هاتفك');
       }
-
       process.exit(0);
     } catch (e) {
       console.error('');
